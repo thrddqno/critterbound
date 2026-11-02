@@ -32,12 +32,12 @@ a static card definition rather than duplicating card rules.
 identity, team, slot, class, abilities, stats, health, and statuses. Creature IDs and team slots must
 be unique within a team.
 
-`BattleState` records phase, round, deterministic seed, teams, combatants, and per-team energy/hand
-state. This is a future runtime state contract, not a persisted player profile.
+`BattleState` records phase, round, deterministic RNG state, shared version, teams, combatants,
+physical cards, and per-team private zones/plans. This runtime state is not a persisted profile.
 
-`BattleCommand` currently supports `COMMIT_PLAN`. Each `QueuedCard` identifies card instance,
-source combatant, target list, and per-Critter queue position. Commands express player intent;
-future server code remains authoritative.
+`BattleCommandEnvelope` supports queue, remove, reorder, clear, and commit requests. It carries
+shared and private expected versions plus idempotent command ID. Authenticated ownership is supplied
+separately by server session, never trusted from payload.
 
 `BattleEvent` is an ordered output envelope. Event payload schemas remain deferred until resolution
 rules exist.

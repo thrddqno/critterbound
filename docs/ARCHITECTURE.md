@@ -24,6 +24,10 @@ Client and server may depend on shared modules. Shared modules must not depend o
 modules. Server and client must not require each other. Feature modules should expose a narrow
 public module and keep implementation details local.
 
+Client presentation adds another one-way boundary: authoritative snapshot-shaped data flows through
+`BattlePresentationMapper`, then into UI props. Components emit local callbacks but never import
+battle rules, networking, or persistence. `PlanningState` represents tentative client intent only.
+
 ## Server authority
 
 Future remote requests require schema checks, ownership checks, state checks, and rate limits.
@@ -52,9 +56,13 @@ Validators establish structural trust boundaries but do not authorize remote req
 server code must still load authoritative state, enforce phase and replay rules, rate-limit
 requests, and ignore client-provided results.
 
+Run 4A adds pure battle construction/planning under `Shared/Battle`. Authoritative command receipts
+and sanitized projections remain under `Server/Services`. Authenticated user identity enters command
+processing separately from untrusted envelopes. Raw battle state never becomes a client snapshot.
+
 ## Determinism
 
-Battle state records an RNG seed. Future random operations must use an explicit, versioned random
-stream rather than `math.random`. Initiative ordering contains no randomness: Speed descending,
+Battle state records a seed and `PARK_MILLER_V1` stream state. Random operations use this explicit,
+versioned stream rather than `math.random`. Initiative ordering contains no randomness: Speed descending,
 alternating team priority by round, slot ascending, then combatant identifier. Resolution creates
 one initiative snapshot after commitment; in-progress Speed changes do not reorder that snapshot.

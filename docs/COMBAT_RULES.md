@@ -23,8 +23,8 @@ attack. Simultaneous commitment closes planning; Speed and future combat rules d
 - 24-card team deck
 - Four ability definitions per Critter, two copies each
 
-Energy and unused cards are intended to carry between rounds. Exact validation, defeat, targeting,
-status, and card-resolution rules remain future work.
+Energy and unused cards carry between rounds. Energy caps at 10. Hands cap at 10; excess draws stay
+in draw pile. Empty draw piles reshuffle discard deterministically when another draw is needed.
 
 ## Battle phases
 
@@ -60,12 +60,14 @@ actually held and available energy. Card instance identifiers may appear once pe
 Per-Critter `queueIndex` values must be contiguous from one. Current target rules require exactly
 one target and support `SELF`, `ALLY`, `ENEMY`, and `ANY`.
 
+Run 4A reserves energy while planning and deducts it on authoritative commit. Cards remain in hand
+and queue until resolution. One committed team does not end planning for other team.
+
 ## Unresolved rules
 
 - Surrender and cancellation transitions
 - Area and multi-target cards
 - Defeated-target legality and automatic retargeting
 - Status stacking, duration timing, and dispels
-- Deck exhaustion, discard, reshuffle, and replacement draws
-- Versioned deterministic RNG algorithm and stream allocation
+- Exact Run 4B discard timing after card resolution
 - Stat caps, rounding, and fractional modifiers

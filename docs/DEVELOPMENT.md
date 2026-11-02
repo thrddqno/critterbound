@@ -37,3 +37,7 @@ Studio checklist:
 3. Confirm output includes `[Critterbound] Server initialized` and
    `[Critterbound] Client initialized` once each.
 4. Confirm no remotes, gameplay loops, DataStore calls, or runtime errors appear.
+
+Run 3 mounts a placeholder `BattleScreen` only in Studio. Follow
+`tests/Integration/README.md` for visual and interaction checks. Lune covers pure asset,
+presentation, and planning behavior but does not emulate Roblox GUI instances.

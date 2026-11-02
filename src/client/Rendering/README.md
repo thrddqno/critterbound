@@ -1,3 +1,4 @@
 # Rendering
 
-Future layered sprite and 2.5D battlefield presentation belongs here.
+Placeholder rendering and future sprite metadata contracts live here. Run 3 implements no animation
+runtime. See `docs/ART_INTEGRATION.md`.

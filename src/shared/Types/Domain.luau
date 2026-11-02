@@ -96,6 +96,7 @@ export type BattleCombatant = {
 export type BattleTeam = {
 	id: string,
 	ownerUserId: number,
+	teamIndex: number?,
 	combatantIds: { string },
 }
 
@@ -106,19 +107,41 @@ export type QueuedCard = {
 	queueIndex: number,
 }
 
-export type BattleCommand = {
-	kind: "COMMIT_PLAN",
-	id: string,
-	battleId: string,
-	actorUserId: number,
+export type BattleCommandType =
+	"QUEUE_CARD"
+	| "REMOVE_QUEUED_CARD"
+	| "REORDER_QUEUED_CARD"
+	| "CLEAR_PLAN"
+	| "COMMIT_PLAN"
+
+export type BattleCommandEnvelope = {
+	protocolVersion: number,
+	matchId: string,
 	teamId: string,
-	queuedCards: { QueuedCard },
+	commandId: string,
+	expectedStateVersion: number,
+	expectedPlanVersion: number,
+	commandType: BattleCommandType,
+	payload: { [string]: any },
+}
+
+export type BattleCommand = BattleCommandEnvelope
+
+export type RngState = {
+	algorithm: "PARK_MILLER_V1",
+	state: number,
+	drawCount: number,
 }
 
 export type TeamRoundState = {
 	teamId: string,
 	energy: number,
+	reservedEnergy: number?,
+	drawPileCardInstanceIds: { string }?,
 	handCardInstanceIds: { string },
+	discardCardInstanceIds: { string }?,
+	queuedCards: { QueuedCard }?,
+	planVersion: number?,
 	committed: boolean,
 }
 
@@ -126,10 +149,13 @@ export type BattleState = {
 	schemaVersion: number,
 	id: string,
 	rngSeed: number,
+	rng: RngState?,
+	stateVersion: number?,
 	phase: BattlePhase,
 	roundNumber: number,
 	teams: { BattleTeam },
 	combatants: { BattleCombatant },
+	cardInstances: { CardInstance }?,
 	teamRoundStates: { TeamRoundState },
 }
 
