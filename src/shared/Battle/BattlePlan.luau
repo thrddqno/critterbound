@@ -2,6 +2,13 @@
 
 local BattlePlan = {}
 
+-- Targeting rules whose targets are derived by the server at resolution time.
+local DERIVED_TARGETING_RULES = {
+	FRONT_ENEMY = true,
+	ALL_ALLIES = true,
+	ALL_ENEMIES = true,
+}
+
 local function clone(value)
 	if type(value) ~= "table" then
 		return value
@@ -122,33 +129,43 @@ local function validatePlan(state, teamId: string, cardDefinitionsById)
 		end
 		spent += definition.energyCost
 
-		if type(queued.targetCombatantIds) ~= "table" or #queued.targetCombatantIds ~= 1 then
-			return failure(
-				"INVALID_TARGET_COUNT",
-				"Current cards require one target",
-				`queuedCards[{index}].targetCombatantIds`
-			)
-		end
-		local targetId = queued.targetCombatantIds[1]
-		local target = combatants[targetId]
-		if target == nil then
-			return failure(
-				"INVALID_TARGET",
-				"Target does not exist",
-				`queuedCards[{index}].targetCombatantIds[1]`
-			)
-		end
 		local rule = definition.targetingRule
-		local legal = rule == "ANY"
-			or (rule == "SELF" and targetId == source.id)
-			or (rule == "ALLY" and target.teamId == source.teamId and targetId ~= source.id)
-			or (rule == "ENEMY" and target.teamId ~= source.teamId)
-		if not legal then
-			return failure(
-				"INVALID_TARGET",
-				"Target violates targeting rule",
-				`queuedCards[{index}].targetCombatantIds[1]`
-			)
+		if DERIVED_TARGETING_RULES[rule] then
+			if type(queued.targetCombatantIds) ~= "table" or #queued.targetCombatantIds ~= 0 then
+				return failure(
+					"INVALID_TARGET_COUNT",
+					"Derived targeting rules require an empty target list",
+					`queuedCards[{index}].targetCombatantIds`
+				)
+			end
+		else
+			if type(queued.targetCombatantIds) ~= "table" or #queued.targetCombatantIds ~= 1 then
+				return failure(
+					"INVALID_TARGET_COUNT",
+					"Card requires one target",
+					`queuedCards[{index}].targetCombatantIds`
+				)
+			end
+			local targetId = queued.targetCombatantIds[1]
+			local target = combatants[targetId]
+			if target == nil then
+				return failure(
+					"INVALID_TARGET",
+					"Target does not exist",
+					`queuedCards[{index}].targetCombatantIds[1]`
+				)
+			end
+			local legal = rule == "ANY"
+				or (rule == "SELF" and targetId == source.id)
+				or (rule == "ALLY" and target.teamId == source.teamId and targetId ~= source.id)
+				or (rule == "ENEMY" and target.teamId ~= source.teamId)
+			if not legal then
+				return failure(
+					"INVALID_TARGET",
+					"Target violates targeting rule",
+					`queuedCards[{index}].targetCombatantIds[1]`
+				)
+			end
 		end
 
 		local indices = indicesBySource[source.id] or {}

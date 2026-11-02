@@ -53,7 +53,53 @@ local function order(entries: { InitiativeEntry }, roundNumber: number): { Initi
 	return actionable
 end
 
+export type CombatInitiativeEntry = {
+	combatantId: string,
+	teamIndex: number,
+	slot: number,
+	speed: number,
+	currentHealth: number,
+	skill: number?,
+	resolve: number?,
+	queuedCards: { QueuedCard },
+}
+
+-- Run 4B priority: higher effective Speed, lower current HP, higher Skill, higher Resolve,
+-- then lower stable combatant ID. The legacy compare/order above remains for Run 2 contracts.
+local function compareCombat(a: CombatInitiativeEntry, b: CombatInitiativeEntry): boolean
+	if a.speed ~= b.speed then
+		return a.speed > b.speed
+	end
+	if a.currentHealth ~= b.currentHealth then
+		return a.currentHealth < b.currentHealth
+	end
+	local aSkill = a.skill or 0
+	local bSkill = b.skill or 0
+	if aSkill ~= bSkill then
+		return aSkill > bSkill
+	end
+	local aResolve = a.resolve or 0
+	local bResolve = b.resolve or 0
+	if aResolve ~= bResolve then
+		return aResolve > bResolve
+	end
+	return a.combatantId < b.combatantId
+end
+
+local function orderCombat(entries: { CombatInitiativeEntry }): { CombatInitiativeEntry }
+	local actionable: { CombatInitiativeEntry } = {}
+	for _, entry in entries do
+		if #entry.queuedCards > 0 then
+			table.insert(actionable, entry)
+		end
+	end
+	table.sort(actionable, compareCombat)
+	return actionable
+end
+
 return table.freeze({
 	compare = compare,
 	order = order,
+	compareCombat = compareCombat,
+	orderCombat = orderCombat,
 })

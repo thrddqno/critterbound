@@ -121,4 +121,74 @@ return function(Harness)
 		Harness.deepEqual(one, two)
 		Harness.deepEqual(entries, before)
 	end)
+
+	local function combatEntry(id, speed, health, skill, resolve, queue)
+		return {
+			combatantId = id,
+			teamIndex = 1,
+			slot = 1,
+			speed = speed,
+			currentHealth = health,
+			skill = skill,
+			resolve = resolve,
+			queuedCards = queue or { card(`card.{id}`, id, 1) },
+		}
+	end
+
+	Harness.test("combat initiative uses speed, health, skill, resolve, then id", function()
+		local speedFirst = Initiative.orderCombat({
+			combatEntry("slow", 10, 50, 9, 9),
+			combatEntry("fast", 30, 100, 1, 1),
+		})
+		Harness.equal(speedFirst[1].combatantId, "fast")
+
+		local healthFirst = Initiative.orderCombat({
+			combatEntry("healthy", 20, 100, 9, 9),
+			combatEntry("wounded", 20, 25, 1, 1),
+		})
+		Harness.equal(healthFirst[1].combatantId, "wounded")
+
+		local skillFirst = Initiative.orderCombat({
+			combatEntry("lowSkill", 20, 100, 1, 9),
+			combatEntry("highSkill", 20, 100, 5, 1),
+		})
+		Harness.equal(skillFirst[1].combatantId, "highSkill")
+
+		local resolveFirst = Initiative.orderCombat({
+			combatEntry("lowResolve", 20, 100, 5, 1),
+			combatEntry("highResolve", 20, 100, 5, 5),
+		})
+		Harness.equal(resolveFirst[1].combatantId, "highResolve")
+
+		local idFirst = Initiative.orderCombat({
+			combatEntry("zulu", 20, 100, 5, 5),
+			combatEntry("alpha", 20, 100, 5, 5),
+		})
+		Harness.equal(idFirst[1].combatantId, "alpha")
+	end)
+
+	Harness.test("combat initiative skips idle Critters and preserves card order", function()
+		local ordered = Initiative.orderCombat({
+			combatEntry("actor", 20, 100, 1, 1, {
+				card("first", "actor", 1),
+				card("second", "actor", 2),
+			}),
+			combatEntry("idle", 99, 100, 1, 1, {}),
+		})
+		Harness.equal(#ordered, 1)
+		Harness.equal(ordered[1].queuedCards[1].cardInstanceId, "first")
+		Harness.equal(ordered[1].queuedCards[2].cardInstanceId, "second")
+	end)
+
+	Harness.test("combat initiative is deterministic and nonmutating", function()
+		local entries = {
+			combatEntry("beta", 20, 100, 1, 1),
+			combatEntry("alpha", 20, 100, 1, 1),
+		}
+		local before = Harness.clone(entries)
+		local first = Initiative.orderCombat(entries)
+		local second = Initiative.orderCombat(entries)
+		Harness.deepEqual(first, second)
+		Harness.deepEqual(entries, before)
+	end)
 end

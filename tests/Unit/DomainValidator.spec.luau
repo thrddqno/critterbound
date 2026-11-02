@@ -150,6 +150,75 @@ return function(Harness)
 		Harness.expect(Harness.hasError(result, "INVALID_TARGET"))
 	end)
 
+	Harness.test("card effects accept known kinds and reject malformed values", function()
+		local definition = Harness.clone(Fixtures.CardDefinitions.FeralStrike)
+		definition.effects = {
+			{ kind = "DAMAGE", amount = 10 },
+			{ kind = "SHIELD", amount = 5 },
+			{ kind = "HEAL", amount = 5 },
+			{ kind = "STATUS", statusId = "POISON", magnitude = 3, duration = 2 },
+		}
+		Harness.expect(Validator.validateCardDefinition(definition, validAbilityIds).ok)
+
+		definition.effects = { { kind = "BURN" } }
+		local kindResult = Validator.validateCardDefinition(definition, validAbilityIds)
+		Harness.expect(Harness.hasError(kindResult, "INVALID_EFFECT_KIND"))
+
+		definition.effects = { { kind = "DAMAGE", amount = -1 } }
+		local amountResult = Validator.validateCardDefinition(definition, validAbilityIds)
+		Harness.expect(Harness.hasError(amountResult, "INVALID_EFFECT_AMOUNT"))
+
+		definition.effects = { { kind = "STATUS", statusId = "BURN", magnitude = 1, duration = 1 } }
+		local statusResult = Validator.validateCardDefinition(definition, validAbilityIds)
+		Harness.expect(Harness.hasError(statusResult, "INVALID_STATUS_ID"))
+
+		definition.effects =
+			{ { kind = "STATUS", statusId = "POISON", magnitude = 1, duration = 1.5 } }
+		local durationResult = Validator.validateCardDefinition(definition, validAbilityIds)
+		Harness.expect(Harness.hasError(durationResult, "INVALID_STATUS_DURATION"))
+	end)
+
+	Harness.test("new targeting rules are valid card definitions", function()
+		for _, rule in { "FRONT_ENEMY", "ALL_ALLIES", "ALL_ENEMIES" } do
+			local definition = Harness.clone(Fixtures.CardDefinitions.FeralStrike)
+			definition.id = `card.rule.{string.lower(rule)}`
+			definition.targetingRule = rule
+			Harness.expect(Validator.validateCardDefinition(definition, validAbilityIds).ok)
+		end
+	end)
+
+	Harness.test("optional skill and resolve stats validate", function()
+		local definition = Harness.clone(Fixtures.Definitions.Feral)
+		definition.baseStats.skill = 4
+		definition.baseStats.resolve = 2
+		Harness.expect(Validator.validateCritterDefinition(definition).ok)
+
+		definition.baseStats.resolve = -1
+		local result = Validator.validateCritterDefinition(definition)
+		Harness.expect(Harness.hasError(result, "INVALID_STAT"))
+	end)
+
+	Harness.test("derived targeting rules require an empty client target list", function()
+		local context = Harness.clone(Fixtures.Context)
+		context.cardDefinitionsById[Fixtures.CardInstances.feral.definitionId].targetingRule =
+			"ALL_ENEMIES"
+
+		local command = Harness.clone(Fixtures.ValidCommand)
+		command.queuedCards[2].targetCombatantIds = {}
+		Harness.expect(Validator.validateBattleCommand(command, context).ok)
+
+		command.queuedCards[2].targetCombatantIds = { Fixtures.Combatants.enemyStone.id }
+		local result = Validator.validateBattleCommand(command, context)
+		Harness.expect(Harness.hasError(result, "INVALID_TARGET_COUNT"))
+	end)
+
+	Harness.test("single-target rules reject an empty target list", function()
+		local command = Harness.clone(Fixtures.ValidCommand)
+		command.queuedCards[2].targetCombatantIds = {}
+		local result = Validator.validateBattleCommand(command, Fixtures.Context)
+		Harness.expect(Harness.hasError(result, "INVALID_TARGET_COUNT"))
+	end)
+
 	Harness.test("validation never mutates inputs", function()
 		local command = Harness.clone(Fixtures.ValidCommand)
 		local context = Harness.clone(Fixtures.Context)

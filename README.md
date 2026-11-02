@@ -3,7 +3,10 @@
 Critterbound is a server-authoritative, 2.5D medieval-fantasy creature card battler for
 Roblox. Teams contain three Critters and eventually resolve secretly planned ability cards in
 Speed order. Run 4A adds deterministic server-authoritative initialization, decks, energy, private
-planning, idempotent commands, and sanitized projections. Combat resolution remains unimplemented.
+planning, idempotent commands, and sanitized projections. Run 4B adds pure, deterministic round
+resolution with initiative, card effects, damage, shields, healing, statuses, knockouts, victory,
+round transitions, and ordered battle events. Transport and presentation integration remain
+deferred.
 
 ## Tooling
 

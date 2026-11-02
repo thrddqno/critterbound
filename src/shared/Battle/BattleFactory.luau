@@ -4,7 +4,15 @@ local BattleFactory = {}
 
 local VALID_CLASSES =
 	{ Verdant = true, Tide = true, Feral = true, Gale = true, Shade = true, Stone = true }
-local VALID_TARGETS = { SELF = true, ALLY = true, ENEMY = true, ANY = true }
+local VALID_TARGETS = {
+	SELF = true,
+	ALLY = true,
+	ENEMY = true,
+	ANY = true,
+	FRONT_ENEMY = true,
+	ALL_ALLIES = true,
+	ALL_ENEMIES = true,
+}
 
 local function failure(code: string, message: string, path: string?)
 	return { ok = false, errors = { { code = code, message = message, path = path } } }
@@ -255,6 +263,7 @@ local function create(input, dependencies)
 				stats = table.clone(critterDefinition.baseStats),
 				currentHealth = critterDefinition.baseStats.maxHealth,
 				statusEffects = {},
+				shields = {},
 			})
 		end
 
@@ -299,6 +308,8 @@ local function create(input, dependencies)
 			rngSeed = input.rngSeed,
 			rng = rng,
 			stateVersion = 1,
+			eventVersion = 0,
+			lastResolvedRound = 0,
 			phase = "PLANNING",
 			roundNumber = 1,
 			teams = battleTeams,

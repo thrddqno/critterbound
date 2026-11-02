@@ -44,7 +44,34 @@ local VALID_TARGETING_RULES: { [string]: boolean } = {
 	ALLY = true,
 	ENEMY = true,
 	ANY = true,
+	FRONT_ENEMY = true,
+	ALL_ALLIES = true,
+	ALL_ENEMIES = true,
 }
+
+-- Targeting rules whose targets are derived by the server. Clients submit an empty list.
+local DERIVED_TARGETING_RULES: { [string]: boolean } = {
+	FRONT_ENEMY = true,
+	ALL_ALLIES = true,
+	ALL_ENEMIES = true,
+}
+
+local VALID_EFFECT_KINDS: { [string]: boolean } = {
+	DAMAGE = true,
+	HEAL = true,
+	SHIELD = true,
+	STATUS = true,
+}
+
+local VALID_STATUS_IDS: { [string]: boolean } = {
+	POISON = true,
+	ATTACK_UP = true,
+	ATTACK_DOWN = true,
+	SPEED_UP = true,
+	SPEED_DOWN = true,
+}
+
+local MAX_EFFECTS_PER_CARD = 8
 
 local function addError(errors: { DomainError }, code: string, message: string, path: string?)
 	table.insert(errors, {
@@ -154,6 +181,18 @@ local function validateStats(errors: { DomainError }, value: unknown, path: stri
 		local fieldValue = stats[field]
 		if not isFiniteNumber(fieldValue) or fieldValue < 0 then
 			addError(errors, "INVALID_STAT", "Expected finite non-negative stat", `{path}.{field}`)
+		end
+	end
+
+	for _, field in { "skill", "resolve" } do
+		local fieldValue = stats[field]
+		if fieldValue ~= nil and (not isFiniteNumber(fieldValue) or fieldValue < 0) then
+			addError(
+				errors,
+				"INVALID_STAT",
+				"Expected finite non-negative optional stat",
+				`{path}.{field}`
+			)
 		end
 	end
 
@@ -367,6 +406,77 @@ local function validateCritterInstance(
 	return finish(errors)
 end
 
+local function validateCardEffects(errors: { DomainError }, value: unknown, path: string)
+	if value == nil then
+		return
+	end
+
+	local length = getArrayLength(value)
+	if length == nil then
+		addError(errors, "INVALID_CARD_EFFECTS", "Expected dense card effect array", path)
+		return
+	end
+	if length > MAX_EFFECTS_PER_CARD then
+		addError(
+			errors,
+			"INVALID_CARD_EFFECTS",
+			`A card may declare at most {MAX_EFFECTS_PER_CARD} effects`,
+			path
+		)
+		return
+	end
+
+	for index, effect in value :: { any } do
+		local effectPath = `{path}[{index}]`
+		if type(effect) ~= "table" then
+			addError(errors, "INVALID_CARD_EFFECT", "Expected card effect table", effectPath)
+			continue
+		end
+
+		local kind = effect.kind
+		if type(kind) ~= "string" or not VALID_EFFECT_KINDS[kind] then
+			addError(errors, "INVALID_EFFECT_KIND", "Unknown card effect kind", `{effectPath}.kind`)
+			continue
+		end
+
+		if kind == "DAMAGE" or kind == "HEAL" or kind == "SHIELD" then
+			if not isFiniteNumber(effect.amount) or effect.amount < 0 then
+				addError(
+					errors,
+					"INVALID_EFFECT_AMOUNT",
+					"Effect amount must be finite and non-negative",
+					`{effectPath}.amount`
+				)
+			end
+		elseif kind == "STATUS" then
+			if type(effect.statusId) ~= "string" or not VALID_STATUS_IDS[effect.statusId] then
+				addError(
+					errors,
+					"INVALID_STATUS_ID",
+					"Unknown status identifier",
+					`{effectPath}.statusId`
+				)
+			end
+			if not isFiniteNumber(effect.magnitude) or effect.magnitude < 0 then
+				addError(
+					errors,
+					"INVALID_STATUS_MAGNITUDE",
+					"Status magnitude must be finite and non-negative",
+					`{effectPath}.magnitude`
+				)
+			end
+			if not isNonNegativeInteger(effect.duration) then
+				addError(
+					errors,
+					"INVALID_STATUS_DURATION",
+					"Status duration must be a non-negative integer",
+					`{effectPath}.duration`
+				)
+			end
+		end
+	end
+end
+
 local function validateCardDefinition(
 	value: unknown,
 	validAbilityIds: { [string]: boolean }?
@@ -417,6 +527,7 @@ local function validateCardDefinition(
 	then
 		addError(errors, "INVALID_TARGETING_RULE", "Unknown targeting rule", "targetingRule")
 	end
+	validateCardEffects(errors, definition.effects, "effects")
 	if
 		validAbilityIds ~= nil
 		and type(definition.abilityId) == "string"
@@ -536,12 +647,26 @@ local function validateTarget(
 	combatantsById: RecordsById,
 	path: string
 )
+	local rule = cardDefinition.targetingRule
+	if type(rule) == "string" and DERIVED_TARGETING_RULES[rule] then
+		local derivedCount = getArrayLength(queuedCard.targetCombatantIds)
+		if derivedCount ~= 0 then
+			addError(
+				errors,
+				"INVALID_TARGET_COUNT",
+				"Derived targeting rules require an empty client target list",
+				`{path}.targetCombatantIds`
+			)
+		end
+		return
+	end
+
 	local targetCount = getArrayLength(queuedCard.targetCombatantIds)
 	if targetCount ~= 1 then
 		addError(
 			errors,
 			"INVALID_TARGET_COUNT",
-			"Current targeting rules require exactly one target",
+			"Targeting rule requires exactly one target",
 			`{path}.targetCombatantIds`
 		)
 		return
@@ -559,7 +684,6 @@ local function validateTarget(
 		return
 	end
 
-	local rule = cardDefinition.targetingRule
 	local legal = rule == "ANY"
 		or (rule == "SELF" and targetId == sourceCombatant.id)
 		or (rule == "ALLY" and target.teamId == sourceCombatant.teamId and targetId ~= sourceCombatant.id)

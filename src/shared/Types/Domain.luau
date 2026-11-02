@@ -4,13 +4,22 @@
 
 export type CritterClass = "Verdant" | "Tide" | "Feral" | "Gale" | "Shade" | "Stone"
 
-export type TargetingRule = "SELF" | "ALLY" | "ENEMY" | "ANY"
+export type TargetingRule =
+	"SELF"
+	| "ALLY"
+	| "ENEMY"
+	| "ANY"
+	| "FRONT_ENEMY"
+	| "ALL_ALLIES"
+	| "ALL_ENEMIES"
 
 export type CritterStats = {
 	maxHealth: number,
 	attack: number,
 	defense: number,
 	speed: number,
+	skill: number?,
+	resolve: number?,
 }
 
 export type CritterDefinition = {
@@ -22,6 +31,17 @@ export type CritterDefinition = {
 	abilityIds: { string },
 }
 
+export type CardEffectKind = "DAMAGE" | "HEAL" | "SHIELD" | "STATUS"
+
+-- Effects execute in authored array order. Only the fields relevant to `kind` are read.
+export type CardEffect = {
+	kind: CardEffectKind,
+	amount: number?,
+	statusId: string?,
+	magnitude: number?,
+	duration: number?,
+}
+
 export type CardDefinition = {
 	schemaVersion: number,
 	id: string,
@@ -30,6 +50,7 @@ export type CardDefinition = {
 	abilityId: string,
 	energyCost: number,
 	targetingRule: TargetingRule,
+	effects: { CardEffect }?,
 }
 
 -- Persistent creature data: owned identity and independently inherited genomes.
@@ -75,10 +96,21 @@ export type BattlePhase =
 
 export type StatusEffect = {
 	id: string,
-	definitionId: string,
-	sourceCombatantId: string?,
-	stacks: number,
-	remainingRounds: number,
+	statusId: string,
+	sourceCombatantId: string,
+	targetCombatantId: string,
+	magnitude: number,
+	duration: number,
+	stackCount: number,
+	appliedRound: number,
+	expiresAtRound: number,
+}
+
+export type BattleShield = {
+	id: string,
+	sourceCombatantId: string,
+	amount: number,
+	expiresAtRound: number,
 }
 
 export type BattleCombatant = {
@@ -91,6 +123,7 @@ export type BattleCombatant = {
 	stats: CritterStats,
 	currentHealth: number,
 	statusEffects: { StatusEffect },
+	shields: { BattleShield }?,
 }
 
 export type BattleTeam = {
@@ -151,6 +184,8 @@ export type BattleState = {
 	rngSeed: number,
 	rng: RngState?,
 	stateVersion: number?,
+	eventVersion: number?,
+	lastResolvedRound: number?,
 	phase: BattlePhase,
 	roundNumber: number,
 	teams: { BattleTeam },
@@ -167,6 +202,20 @@ export type BattleEvent = {
 	kind: string,
 	sourceCombatantId: string?,
 	targetCombatantIds: { string },
+	payload: { [string]: any }?,
+}
+
+export type BattleOutcome = {
+	isDraw: boolean,
+	winnerTeamId: string?,
+	reason: string,
+}
+
+export type BattleResolutionResult = {
+	state: BattleState,
+	events: { BattleEvent },
+	stateVersion: number,
+	matchOutcome: BattleOutcome?,
 }
 
 export type InitiativeEntry = {
