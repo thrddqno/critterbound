@@ -710,8 +710,8 @@ local function validateBattleCommand(
 	end
 
 	local command = value :: { [any]: any }
-	if command.kind ~= "COMMIT_PLAN" then
-		addError(errors, "INVALID_COMMAND_KIND", "Expected COMMIT_PLAN command", "kind")
+	if command.commandType ~= "COMMIT_PLAN" then
+		addError(errors, "INVALID_COMMAND_KIND", "Expected COMMIT_PLAN command", "commandType")
 	end
 	validateIdentifier(errors, command.id, "id", "INVALID_COMMAND_ID")
 	validateIdentifier(errors, command.battleId, "battleId", "INVALID_BATTLE_ID")

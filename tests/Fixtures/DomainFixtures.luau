@@ -234,7 +234,7 @@ local Context = {
 }
 
 local ValidCommand = {
-	kind = "COMMIT_PLAN",
+	commandType = "COMMIT_PLAN",
 	id = "command.round1.team1",
 	battleId = "battle.fixture",
 	actorUserId = 101,

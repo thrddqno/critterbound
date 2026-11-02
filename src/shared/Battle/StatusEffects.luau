@@ -96,7 +96,7 @@ local function apply(
 
 	combatant.statusEffects = combatant.statusEffects or {}
 	local existing = findStatus(combatant, statusId)
-	local expiresAtRound = roundNumber + math.max(0, duration) - 1
+	local expiresAtRound = roundNumber + math.max(0, duration - 1)
 
 	if existing ~= nil then
 		local cap = stackCap(statusId)
