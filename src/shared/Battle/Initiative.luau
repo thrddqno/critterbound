@@ -1,0 +1,59 @@
+--!strict
+
+export type QueuedCard = {
+	cardInstanceId: string,
+	sourceCombatantId: string,
+	targetCombatantIds: { string },
+	queueIndex: number,
+}
+
+export type InitiativeEntry = {
+	combatantId: string,
+	teamIndex: number,
+	slot: number,
+	speed: number,
+	queuedCards: { QueuedCard },
+}
+
+local function compare(a: InitiativeEntry, b: InitiativeEntry, roundNumber: number): boolean
+	if a.speed ~= b.speed then
+		return a.speed > b.speed
+	end
+
+	if a.teamIndex ~= b.teamIndex then
+		if roundNumber % 2 == 1 then
+			return a.teamIndex < b.teamIndex
+		end
+
+		return a.teamIndex > b.teamIndex
+	end
+
+	if a.slot ~= b.slot then
+		return a.slot < b.slot
+	end
+
+	return a.combatantId < b.combatantId
+end
+
+local function order(entries: { InitiativeEntry }, roundNumber: number): { InitiativeEntry }
+	assert(roundNumber >= 1 and roundNumber % 1 == 0, "roundNumber must be a positive integer")
+
+	local actionable: { InitiativeEntry } = {}
+
+	for _, entry in entries do
+		if #entry.queuedCards > 0 then
+			table.insert(actionable, entry)
+		end
+	end
+
+	table.sort(actionable, function(a, b)
+		return compare(a, b, roundNumber)
+	end)
+
+	return actionable
+end
+
+return table.freeze({
+	compare = compare,
+	order = order,
+})
