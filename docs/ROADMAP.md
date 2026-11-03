@@ -33,13 +33,31 @@ match per player, sanitized snapshots, legal queue/remove/reorder/clear/commit c
 deterministic AI, ordered client playback, terminal results, restart, and multi-round end-to-end
 tests. Placeholder Critters and cards remain replaceable authored content.
 
+## Run 6A — complete
+
+Versioned DataStore profiles, renewable session ownership, bounded retries, migrations, autosave,
+one-time Stone/Feral/Verdant starter ownership, selected teams, sanitized profile DTOs, and
+profile-backed Training Grounds battles. Inventory, breeding, trading, equipment, rewards, and
+crafting remain unimplemented.
+
+## Run 6B — complete
+
+Stackable and unique inventory records, centralized fixture definitions, bounded idempotent grants,
+single-slot Critter equipment, persisted team selection, sanitized player-data commands, schema
+migration, and rollback-safe profile mutations. Equipment modifiers remain data only.
+
+## Run 6C — complete
+
+Main Menu navigation, collection details, ordered team builder, inventory/equipment UI, sanitized
+atomic collection DTOs, revision-checked idempotent player-data commands, and Training Grounds
+return flow. Placeholder assets support desktop and landscape mobile without production artwork.
+
 ## Later runs
 
-1. Versioned profile persistence and creature collection
-2. Genetics, breeding, items, equipment, and crafting
-3. Trading with atomic server-side validation
-4. PvE expeditions and expanded AI opponents
-5. Competitive PvP, production UI, animation, and asset integration
+1. Genetics, breeding, and crafting
+2. Trading with atomic server-side validation
+3. PvE expeditions and expanded AI opponents
+4. Competitive PvP, production UI, animation, and asset integration
 
 Each run should validate its contracts before adding dependent systems. Monetization and random
 loot remain outside foundation scope.

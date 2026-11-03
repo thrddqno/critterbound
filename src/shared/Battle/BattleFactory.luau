@@ -187,11 +187,12 @@ local function create(input, dependencies)
 					`teams[{teamIndex}].critterInstances[{slot}].definitionId`
 				)
 			end
+			local baseStats = instance.baseStats or critterDefinition.baseStats
 			if
 				not VALID_CLASSES[critterDefinition.class]
-				or type(critterDefinition.baseStats) ~= "table"
-				or type(critterDefinition.baseStats.maxHealth) ~= "number"
-				or critterDefinition.baseStats.maxHealth <= 0
+				or type(baseStats) ~= "table"
+				or type(baseStats.maxHealth) ~= "number"
+				or baseStats.maxHealth <= 0
 			then
 				return failure(
 					"INVALID_CRITTER_DEFINITION",
@@ -260,8 +261,8 @@ local function create(input, dependencies)
 				slot = slot,
 				class = critterDefinition.class,
 				abilityIds = table.clone(abilities),
-				stats = table.clone(critterDefinition.baseStats),
-				currentHealth = critterDefinition.baseStats.maxHealth,
+				stats = table.clone(baseStats),
+				currentHealth = baseStats.maxHealth,
 				statusEffects = {},
 				shields = {},
 			})

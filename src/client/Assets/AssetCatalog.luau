@@ -17,4 +17,6 @@ return AssetRegistry.new({
 	{ id = "icon.class.stone", category = "CLASS_ICON" },
 	{ id = "icon.class.feral", category = "CLASS_ICON" },
 	{ id = "icon.class.verdant", category = "CLASS_ICON" },
+	{ id = "item.equipment.training_charm", category = "EQUIPMENT_ICON" },
+	{ id = "item.material.iron_shard", category = "EQUIPMENT_ICON" },
 })

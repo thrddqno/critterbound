@@ -1,73 +1,55 @@
 # UI Architecture
 
-Run 5 retains the component shell and wires it to authoritative Training Grounds snapshots,
-commands, ordered event playback, terminal results, and restart.
+Run 6C uses one application lifecycle owner. Client bootstrap mounts `AppController`; it waits for a
+sanitized collection DTO, then enters Main Menu instead of automatically starting battle.
 
 ## Data flow
 
 ```text
 Client bootstrap
-  -> BattleRequest
-  -> sanitized server snapshot
-  -> BattlePresentationMapper
-  -> BattleScreenController
-  -> BattleScreen component tree
-  -> command callback
-  -> authoritative response
-  -> BattlePlayback events
-  -> final snapshot reconciliation
+  -> AppController
+  -> PlayerDataRequest v2
+  -> sanitized collection/inventory DTO
+  -> CollectionPresentation
+  -> active screen component
+  -> callback
+  -> revision-checked command
+  -> refreshed authoritative DTOs
 ```
 
-Opponent private plans never enter a client snapshot during planning.
+`NavigationController` owns only route state. `AppController` owns networking, cached revisions,
+pending commands, screen teardown, and battle controller lifecycle. Components never invoke remotes.
 
-## Component hierarchy
+## Routes
 
 ```text
-BattleScreen
-├── BattlePhaseIndicator
-├── EnergyCounter
-├── InitiativeTimeline
-├── BattlefieldView
-│   └── 6 x CritterView
-│       ├── PlaceholderRenderer
-│       └── CritterHealthBar
-├── CardQueue
-├── CardHand
-│   └── CardView
-├── CommitButton
-├── ResetButton
-└── BattleResultOverlay
+MainMenu
+├── CollectionScreen
+│   └── CritterDetail
+├── TeamBuilderScreen
+├── InventoryScreen
+│   └── EquipmentPanel
+└── BattleScreen
 ```
 
-Components use `mount(parent, props)` and return handles with `update(props)` and `destroy()`.
-Parents own child handles. Components receive presentation data, asset descriptors, and callbacks;
-they do not access server services or mutate battle state.
+All components use `mount(parent, props)` and return `update` plus `destroy`. Every event connection is
+owned by its component and disconnected during destruction. Reinitializing app destroys previous
+controller first.
 
-## Presentation boundary
+## Player-data commands
 
-`BattlePresentationMapper` converts an authoritative snapshot into client-owned view data. It
-resolves stable references, orders viewer team first, preserves hand order, and preserves supplied
-initiative order. It never calculates initiative or combat outcomes.
+Team and equipment mutations include `commandId`, `expectedRevision`, and a narrow payload. While a
+request is pending, action buttons reject double clicks. Network retries reuse the same command ID.
+Stale responses refresh authoritative DTOs and require user review rather than overwriting data.
 
-Shield totals, effective Speed, statuses, reserved energy, initiative, and outcome are explicit
-server projections. Missing references return structured errors instead of partially rendering data.
+## Battle lifecycle
 
-## Local planning
+Entering Training Grounds mounts existing `BattleScreenController`. Battle restart remains local to
+that controller. Main Menu destroys playback/UI state; later battle start uses current selected-team
+snapshot. Permanent collection HP and genes never reference combat state.
 
-Manual `ALLY` and `ANY` target selection is client interaction state, but chosen IDs are validated by
-the server. Automatic rules submit no IDs; `ENEMY` resolves to the slowest living opponent. Queue,
-remove, reorder, clear, and commit responses replace local planning state with authoritative
-snapshots. Command input locks while a request is pending or playback runs. Restart increments a
-playback epoch so delayed events cannot overwrite the fresh battle.
+## Responsive shell
 
-## Stabilized layout
-
-Run 3.1 adds explicit bounded regions for cards and Critters, visible Player/Enemy identity,
-scrollable initiative and hand rows, and a compact queue grouped by source combatant ID. Initiative
-display preserves supplied authoritative order. Queue grouping is a pure presentation transform and
-does not change local planning intent.
-
-`BattleScreen` applies desktop and compact-landscape metrics from viewport size. Short landscape
-viewports use vertical screen scrolling rather than shrinking text below readable sizes. Resize
-updates layout metrics without replacing planning state, and controller startup destroys any prior
-screen handle before mounting another.
+Screens use scale-based major regions, scrollable lists, readable fixed-size labels, and 40–60 pixel
+actions. Layout targets desktop and landscape mobile. Logical assets resolve through `AssetRegistry`;
+missing creature and item art renders labeled placeholders.

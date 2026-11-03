@@ -83,7 +83,15 @@ local function new(dependencies)
 
 	local function createSession(userId: number)
 		local generation = (generations[userId] or 0) + 1
-		local input = deps.content.createInput(userId, generation)
+		local inputFactory = deps.inputFactory or deps.content
+		local produced = inputFactory.createInput(userId, generation)
+		if type(produced) == "table" and produced.ok ~= nil then
+			if not produced.ok then
+				return produced
+			end
+			produced = produced.value
+		end
+		local input = produced
 		local created = deps.factory.create(input, {
 			rng = deps.rng,
 			deck = deps.deck,
@@ -316,6 +324,10 @@ local function new(dependencies)
 	function service.removePlayer(userId: number)
 		sessions[userId] = nil
 		lifecycleReceipts[userId] = nil
+	end
+
+	function service.invalidateBattle(userId: number)
+		sessions[userId] = nil
 	end
 
 	service.startBattle = startBattle

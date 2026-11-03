@@ -59,7 +59,14 @@ resolves both committed plans, and calls `BattleProjector.project`. Exact comman
 stored receipts without resolving twice. Restart IDs are also idempotent. Player disconnect removes
 the in-memory session. Raw `BattleState` and `processedCommandsById` are never replicated.
 
-Production rate limiting, receipt pruning, and persistence remain future work.
+Run 6A injects `TrainingBattleInputAdapter` into this service. It replaces synthetic player instances
+with deep-copied selected owned Critters after profile load. AI content remains authored Training
+Grounds data. Combat HP, shields, cards, statuses, and plans remain temporary. Production rate
+limiting and receipt pruning remain future work.
+
+Run 6B team changes preserve this adapter contract. Selected owned Critters still enter battle as
+deep-copied combatants. Equipment references and modifiers are intentionally ignored by combat
+construction and calculations.
 
 Protocol version 3 makes `SELF` and `ENEMY` automatic target rules. Clients submit empty target lists;
 the server resolves `ENEMY` to the living opponent with lowest effective Speed, then slot and ID.

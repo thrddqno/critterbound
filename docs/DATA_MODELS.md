@@ -1,7 +1,7 @@
 # Data Models
 
-Run 5 uses the combat contracts in a versioned request protocol and sanitized snapshot projection.
-It still does not define profile storage formats or production persistence.
+Run 6B adds inventory, equipment, and mutable selected teams while retaining Run 6A ownership and
+the combat contracts from earlier runs.
 
 ## Static definitions
 
@@ -42,8 +42,51 @@ genomes:
 - `AppearanceGenome`: species, body variant, palette, and pattern identifiers.
 - `AbilityGenome`: exactly four unique combat ability identifiers.
 
-Changing appearance data cannot modify ability data. No inheritance, breeding, mutation, level,
-equipment, or persistence behavior exists through Run 5.
+Changing appearance data cannot modify ability data. Each owned Critter also snapshots base stats,
+acquisition metadata, tradability, breeding flags, and equipment ID references. Run 6A stores these
+fields but implements no breeding, trading, equipment, inventory, or reward behavior.
+
+## Player profile
+
+`PlayerProfile` schema version 2 stores `userId`, revision, creation/update timestamps,
+`starterGrantVersion`, `ownedCritters`, and an ordered `selectedTeam` of exactly three unique owned
+IDs. Progression remains an empty placeholder.
+
+Inventory schema version 2 contains:
+
+- `stacksByDefinitionId`: positive quantities for stackable definitions.
+- `uniqueItemsById`: server-generated immutable item identities, ownership, acquisition metadata,
+  and equipment state.
+- `operationsById` plus `operationOrder`: at most 128 idempotent grant receipts.
+
+`ItemDefinition` is static registry data: display name, category, rarity, stack behavior, maximum
+stack, equipment slot, modifiers, and tradeability. Static definitions are never copied into profile
+records. Fixture categories are material, catalyst, consumable, equipment, and collectible.
+
+Each Critter supports zero or one equipment item. A unique equipment item stores
+`equippedCritterId`; the Critter stores the same item ID in `equipmentIds`. Validation requires both
+references to agree. Equipping an occupied slot atomically makes the old item available and equips
+the new item. Equipment modifiers are inert data in Run 6B.
+
+Run 6C collection DTO version 1 contains profile revision, ordered selected IDs, and sanitized owned
+Critter presentation records. Equipment is embedded as a display summary. Owner IDs, raw equipment
+references, inventory operation receipts, session locks, and DataStore metadata are omitted.
+
+Inventory DTO version 1 contains revision, stack summaries, and unique-item summaries. Static item
+descriptions come from `ItemRegistry`; authoritative profile records never store presentation text.
+
+Static `CritterDefinition` records are authored content and are never stored in a profile.
+`CritterInstance` records are permanent ownership data. `BattleCombatant` records are disposable
+snapshots. Current HP, shields, statuses, physical cards, and battle plans never write back to owned
+Critters.
+
+The DataStore value wraps the profile with `recordVersion` and an optional session lock containing a
+server job ID, opaque token, and lease expiry. Lock metadata is operational server data and never
+appears in profile DTOs.
+
+Profile mutations clone cached state, validate the full candidate, and save under the Run 6A session
+lock. Cache replacement happens only after successful persistence. DataStore failure therefore
+cannot expose or retain a partially applied inventory, equipment, or team mutation.
 
 `CardInstance` identifies one physical deck/hand card and its source Critter instance. It references
 a static card definition rather than duplicating card rules. Defeat removes sourced card IDs from
@@ -197,4 +240,5 @@ Run 4B validation adds:
 Authored static and persistent schemas currently use version `1`. Runtime `BattleState` uses
 `schemaVersion = 2`; Run 4B added optional battle fields without changing the meaning of existing
 ones. Network protocol versioning remains separate because a data migration and protocol change are
-not equivalent. Future persisted schema changes require explicit migrations.
+not equivalent. Persisted schema changes require explicit sequential migrations. Unknown future
+versions and corrupt records fail closed rather than being replaced by defaults.

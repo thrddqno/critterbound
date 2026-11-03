@@ -72,6 +72,14 @@ local Instances = {
 	},
 }
 
+for className, instance in Instances do
+	instance.baseStats = Definitions[className].baseStats
+	instance.acquisition = { source = "FIXTURE", acquiredAt = 1, sourceVersion = 1 }
+	instance.breeding = { breedable = false, generation = 0, parentIds = {} }
+	instance.tradable = false
+	instance.equipmentIds = {}
+end
+
 local CardDefinitions = {
 	StoneGuard = {
 		schemaVersion = 1,

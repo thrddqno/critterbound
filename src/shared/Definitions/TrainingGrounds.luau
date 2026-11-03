@@ -2,6 +2,15 @@
 
 -- Replaceable Training Grounds content. Runtime state is always built by BattleFactory.
 
+local function requireSibling(name: string)
+	if script ~= nil then
+		return require(script.Parent[name])
+	end
+	return require(`./{name}`)
+end
+
+local CritterCatalog = requireSibling("CritterCatalog")
+
 local function clone<T>(value: T): T
 	if type(value) ~= "table" then
 		return value
@@ -14,96 +23,12 @@ local function clone<T>(value: T): T
 end
 
 local critters = {
-	Stone = {
-		schemaVersion = 1,
-		id = "critter.training.stone",
-		displayName = "Bastion",
-		class = "Stone",
-		baseStats = {
-			maxHealth = 120,
-			attack = 22,
-			defense = 34,
-			speed = 10,
-			skill = 2,
-			resolve = 6,
-		},
-		abilityIds = { "stone.guard", "stone.bulwark", "stone.quake", "stone.slam" },
-	},
-	Feral = {
-		schemaVersion = 1,
-		id = "critter.training.feral",
-		displayName = "Ravager",
-		class = "Feral",
-		baseStats = {
-			maxHealth = 84,
-			attack = 40,
-			defense = 12,
-			speed = 31,
-			skill = 5,
-			resolve = 2,
-		},
-		abilityIds = { "feral.strike", "feral.pounce", "feral.frenzy", "feral.rend" },
-	},
-	Verdant = {
-		schemaVersion = 1,
-		id = "critter.training.verdant",
-		displayName = "Bloom",
-		class = "Verdant",
-		baseStats = {
-			maxHealth = 98,
-			attack = 18,
-			defense = 20,
-			speed = 20,
-			skill = 4,
-			resolve = 5,
-		},
-		abilityIds = { "verdant.mend", "verdant.renew", "verdant.grove", "verdant.seed" },
-	},
-	Tide = {
-		schemaVersion = 1,
-		id = "critter.training.tide",
-		displayName = "Rill",
-		class = "Tide",
-		baseStats = {
-			maxHealth = 102,
-			attack = 20,
-			defense = 22,
-			speed = 17,
-			skill = 5,
-			resolve = 5,
-		},
-		abilityIds = { "tide.mend", "tide.renew", "tide.barrier", "tide.surge" },
-	},
-	Gale = {
-		schemaVersion = 1,
-		id = "critter.training.gale",
-		displayName = "Zephyr",
-		class = "Gale",
-		baseStats = {
-			maxHealth = 88,
-			attack = 27,
-			defense = 15,
-			speed = 28,
-			skill = 6,
-			resolve = 3,
-		},
-		abilityIds = { "gale.ward", "gale.shelter", "gale.gust", "gale.haste" },
-	},
-	Shade = {
-		schemaVersion = 1,
-		id = "critter.training.shade",
-		displayName = "Gloom",
-		class = "Shade",
-		baseStats = {
-			maxHealth = 82,
-			attack = 34,
-			defense = 14,
-			speed = 24,
-			skill = 6,
-			resolve = 4,
-		},
-		abilityIds = { "shade.bite", "shade.toxin", "shade.weaken", "shade.storm" },
-	},
+	Stone = CritterCatalog.getByClass("Stone"),
+	Feral = CritterCatalog.getByClass("Feral"),
+	Verdant = CritterCatalog.getByClass("Verdant"),
+	Tide = CritterCatalog.getByClass("Tide"),
+	Gale = CritterCatalog.getByClass("Gale"),
+	Shade = CritterCatalog.getByClass("Shade"),
 }
 
 local function card(id, className, cost, target, description, effects)
@@ -316,6 +241,11 @@ local function makeInstance(definition, ownerUserId: number, suffix: string)
 			patternId = "placeholder",
 		},
 		abilityGenome = { schemaVersion = 1, abilityIds = clone(definition.abilityIds) },
+		baseStats = clone(definition.baseStats),
+		acquisition = { source = "TRAINING", acquiredAt = 0, sourceVersion = 1 },
+		breeding = { breedable = false, generation = 0, parentIds = {} },
+		tradable = false,
+		equipmentIds = {},
 	}
 end
 
@@ -331,10 +261,7 @@ local function createInput(playerUserId: number, generation: number)
 		makeInstance(critters.Gale, aiOwnerUserId, `ai.{generation}`),
 		makeInstance(critters.Shade, aiOwnerUserId, `ai.{generation}`),
 	}
-	local critterDefinitionsById = {}
-	for _, definition in critters do
-		critterDefinitionsById[definition.id] = clone(definition)
-	end
+	local critterDefinitionsById = CritterCatalog.allById()
 	return {
 		battleId = `training:{playerUserId}:{generation}`,
 		rngSeed = ((playerUserId % 2_000_000_000) + generation * 7919) % 2_147_483_646 + 1,

@@ -14,9 +14,11 @@ end
 DevelopmentLogger.info("Client initialized")
 
 local Protocol = require(Shared.Network.Protocol)
+local PlayerDataProtocol = require(Shared.Network.PlayerDataProtocol)
 local remotes = ReplicatedStorage:WaitForChild(Protocol.RemoteFolderName)
 local battleRequest = remotes:WaitForChild(Protocol.BattleRequestName) :: RemoteFunction
-local BattleScreenController = require(script.Parent.Controllers.BattleScreenController)
+local playerDataRequest = remotes:WaitForChild(PlayerDataProtocol.RemoteName) :: RemoteFunction
+local AppController = require(script.Parent.Controllers.AppController)
 local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui") :: PlayerGui
-BattleScreenController.start(playerGui, battleRequest)
-DevelopmentLogger.info("Authoritative battle screen mounted")
+AppController.start(playerGui, playerDataRequest, battleRequest)
+DevelopmentLogger.info("Application shell mounted")

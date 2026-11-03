@@ -2,10 +2,10 @@
 
 Critterbound is a server-authoritative, 2.5D medieval-fantasy creature card battler for
 Roblox. Teams contain three Critters and eventually resolve secretly planned ability cards in
-Speed order. Run 5 integrates deterministic planning and resolution into a playable 3v3 Training
-Grounds battle. One authenticated server endpoint owns battle creation, legal commands, deterministic
-AI planning, resolution, sanitized snapshots, and restart. The client renders authoritative state and
-plays ordered battle events before accepting the final snapshot.
+Speed order. Run 6C adds app navigation, collection details, team building, inventory equipment, and
+menu-integrated Training Grounds on top of persistent Run 6B ownership. The server owns item creation,
+equipment, team validation, battle creation, persistence, revisions, and sanitized projections.
+Equipment combat effects remain intentionally disabled.
 
 ## Tooling
 
@@ -33,7 +33,7 @@ rokit install
 ## Layout
 
 - `src/shared`: replicated definitions, immutable configuration, contracts, and pure utilities
-- `src/server`: authoritative battle service, deterministic Training Grounds AI, and transport
+- `src/server`: authoritative profiles, persistence, battle service, Training Grounds AI, and transport
 - `src/client`: network controller, event playback, UI, and placeholder sprite rendering
 - `docs`: architecture, design, art, development, and roadmap documentation
 - `art`: source-art organization only; no production art exists yet

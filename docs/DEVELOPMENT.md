@@ -36,7 +36,18 @@ Studio checklist:
 2. Start a local play session.
 3. Confirm output includes `[Critterbound] Server initialized` and
    `[Critterbound] Client initialized` once each.
-4. Confirm no remotes, gameplay loops, DataStore calls, or runtime errors appear.
+4. Confirm profile load completes and Training Grounds uses the same three owned Critter IDs after
+   leaving and rejoining.
+5. Confirm no runtime errors appear during autosave, disconnect, or server shutdown.
+6. Through `PlayerDataRequest`, confirm inventory/team DTOs omit profile locks and grant receipts.
+7. Confirm equipment and reordered teams survive a leave/rejoin cycle without changing owned IDs.
+8. Run 6C Studio checks require a published test place and Studio API Services. The explicit
+   server-only Studio fixture grants one charm and material stack idempotently; it cannot run outside
+   Studio.
+
+DataStore checks require a published test universe with Studio API Services enabled. Use a separate
+test universe/store. Never connect Studio testing to production player data. Disabled API access must
+fail profile load without creating a guest profile.
 
 Run 3 mounts a placeholder `BattleScreen` only in Studio. Follow
 `tests/Integration/README.md` for visual and interaction checks. Lune covers pure asset,

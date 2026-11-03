@@ -23,7 +23,7 @@ local function errorMessage(response): string
 	return "NETWORK_ERROR: Battle request failed"
 end
 
-function BattleScreenController.start(playerGui: PlayerGui, battleRequest: RemoteFunction)
+function BattleScreenController.start(playerGui: PlayerGui, battleRequest: RemoteFunction, options)
 	if activeControllerHandle ~= nil then
 		activeControllerHandle.destroy()
 		activeControllerHandle = nil
@@ -167,6 +167,11 @@ function BattleScreenController.start(playerGui: PlayerGui, battleRequest: Remot
 					message = nil
 					updateScreen()
 				end)
+			end,
+			onExitToMenu = function()
+				if options ~= nil and options.onExitToMenu ~= nil then
+					options.onExitToMenu()
+				end
 			end,
 			selectableTargetIds = selectableTargetIds,
 			activeCombatantIds = activeCombatantIds,

@@ -24,6 +24,7 @@ export type Props = {
 	onCommit: () -> (),
 	onReset: () -> (),
 	onRestart: () -> (),
+	onExitToMenu: () -> (),
 	selectableTargetIds: { string },
 	activeCombatantIds: { string },
 	requestPending: boolean?,
@@ -163,6 +164,20 @@ function BattleScreen.mount(parent: Instance, props: Props)
 	restartButton.ZIndex = 21
 	restartButton.Parent = resultOverlay
 	local restartConnection = restartButton.Activated:Connect(props.onRestart)
+	local currentProps = props
+	local exitButton = Instance.new("TextButton")
+	exitButton.Name = "ExitToMenu"
+	exitButton.BackgroundColor3 = Theme.PanelAlt
+	exitButton.Position = UDim2.new(1, -142, 0, 6)
+	exitButton.Size = UDim2.fromOffset(132, 44)
+	exitButton.Text = "Main Menu"
+	exitButton.TextColor3 = Theme.Text
+	exitButton.TextSize = 15
+	exitButton.ZIndex = 15
+	exitButton.Parent = screen
+	local exitConnection = exitButton.Activated:Connect(function()
+		currentProps.onExitToMenu()
+	end)
 
 	local messageLabel = Instance.new("TextLabel")
 	messageLabel.Name = "LocalPlanningMessage"
@@ -174,7 +189,6 @@ function BattleScreen.mount(parent: Instance, props: Props)
 	messageLabel.TextWrapped = true
 	messageLabel.Parent = controls
 
-	local currentProps = props
 	local compact = false
 	local childrenReady = true
 	local renderChildren: () -> ()
@@ -310,6 +324,7 @@ function BattleScreen.mount(parent: Instance, props: Props)
 			commitHandle.destroy()
 			resetHandle.destroy()
 			restartConnection:Disconnect()
+			exitConnection:Disconnect()
 			resultOverlay:Destroy()
 			screen:Destroy()
 		end,

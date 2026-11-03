@@ -26,6 +26,7 @@ export type CritterDefinition = {
 	schemaVersion: number,
 	id: string,
 	displayName: string,
+	description: string,
 	class: CritterClass,
 	baseStats: CritterStats,
 	abilityIds: { string },
@@ -75,6 +76,19 @@ export type CritterInstance = {
 	ownerUserId: number,
 	appearanceGenome: AppearanceGenome,
 	abilityGenome: AbilityGenome,
+	baseStats: CritterStats,
+	acquisition: {
+		source: string,
+		acquiredAt: number,
+		sourceVersion: number,
+	},
+	breeding: {
+		breedable: boolean,
+		generation: number,
+		parentIds: { string },
+	},
+	tradable: boolean,
+	equipmentIds: { string },
 }
 
 export type CardInstance = {
@@ -246,16 +260,59 @@ export type DomainFailure = {
 
 export type DomainResult<T> = DomainSuccess<T> | DomainFailure
 
--- Deferred persistence types retained for Run 1 compatibility.
+-- Persistent profile data. Runtime session locks live outside this player-owned schema.
 
-export type ItemRecord = {
-	id: string,
+export type ItemCategory = "MATERIAL" | "CATALYST" | "CONSUMABLE" | "EQUIPMENT" | "COLLECTIBLE"
+export type ItemRarity = "COMMON" | "UNCOMMON" | "RARE" | "EPIC"
+
+export type ItemDefinition = {
 	schemaVersion: number,
+	id: string,
+	displayName: string,
+	category: ItemCategory,
+	rarity: ItemRarity,
+	stackable: boolean,
+	maxStack: number,
+	equipmentSlot: "CRITTER"?,
+	modifiers: { [string]: number },
+	tradeable: boolean,
+}
+
+export type UniqueItemInstance = {
+	schemaVersion: number,
+	instanceId: string,
+	definitionId: string,
+	ownerUserId: number,
+	metadata: {
+		source: string,
+		acquiredAt: number,
+	},
+	equipment: {
+		equippedCritterId: string?,
+	},
 }
 
 export type PlayerProfile = {
-	userId: number,
 	schemaVersion: number,
+	userId: number,
+	revision: number,
+	createdAt: number,
+	updatedAt: number,
+	starterGrantVersion: number,
+	ownedCritters: { [string]: CritterInstance },
+	selectedTeam: { string },
+	inventory: {
+		schemaVersion: number,
+		stacksByDefinitionId: { [string]: number },
+		uniqueItemsById: { [string]: UniqueItemInstance },
+		operationsById: { [string]: any },
+		operationOrder: { string },
+	},
+	progression: {
+		schemaVersion: number,
+		flags: { [string]: boolean },
+		counters: { [string]: number },
+	},
 }
 
 export type TradeRecord = {

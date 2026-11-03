@@ -9,7 +9,7 @@ pure gameplay logic. Shared modules must not use GUI, DataStore, or server-only 
 
 ### Server
 
-`src/server` owns authoritative gameplay and future persistent state. Battle commands, breeding,
+`src/server` owns authoritative gameplay and persistent state. Battle commands, breeding,
 inventories, equipment, and trades are accepted only after server validation. Client messages are
 requests, never trusted state transitions.
 
@@ -41,14 +41,35 @@ Run 5 exposes one `ReplicatedStorage.Remotes.BattleRequest` `RemoteFunction`. Re
 `BattleService` owns one in-memory session per player. It validates command envelopes through
 `BattleCommandProcessor`, plans AI cards through the same command path, resolves committed plans
 exactly once, and projects only viewer-safe state. Raw state, RNG state, opponent hands and plans,
-and command receipts never enter replicated snapshots. Disconnect removes the session. Persistence
-and explicit rate limiting remain future work.
+and command receipts never enter replicated snapshots. Disconnect removes the session. Explicit
+transport rate limiting remains future work.
 
 ## Persistent data
 
-Profiles will use explicit schema versions, migrations, bounded writes, and session-safe ownership.
-DataStore failures must be expected and recoverable. Persistent records remain separate from
-runtime battle state. No persistence exists in Run 1.
+Run 6A profiles use explicit schema versions, migration hooks, bounded `UpdateAsync` retries, and
+renewable session locks. Missing records may be created; failed, corrupt, future-version, or
+concurrently owned records never fall back to writable defaults. Autosave, disconnect, and shutdown
+release paths all verify the lock token. Persistent records remain separate from runtime battle
+state.
+
+`ProfileService` retains repository handles server-side and projects detached DTOs. Training Grounds
+loads the selected owned team through `TrainingBattleInputAdapter`; `BattleFactory` then snapshots
+base stats and genomes into combatants. Battle mutation cannot reach cached ownership records.
+
+Run 6B adds one serialized mutation boundary per loaded profile. Inventory, equipment, and team
+services mutate a cloned candidate through `ProfileService.UpdateProfile`. Repository validation and
+locked persistence complete before the candidate replaces cached state. Mutations racing autosave or
+another command wait on the same writer lock.
+
+`PlayerDataRequest` exposes only sanitized reads, team selection, equip, and unequip commands.
+Authenticated `Player.UserId` supplies ownership. Item grants and removals remain server-only; client
+payloads never contain authoritative item records.
+
+Run 6C routes this remote through `PlayerDataService`. Reads return detached collection or inventory
+DTOs. Mutations require a bounded command ID and expected profile revision. Duplicate receipt lookup
+precedes stale-revision validation; conflicting command-ID reuse fails. Accepted team changes
+invalidate only the active battle snapshot. Session-memory receipts are bounded and cleared on
+disconnect.
 
 ## Domain contracts
 

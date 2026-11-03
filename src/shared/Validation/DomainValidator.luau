@@ -375,6 +375,66 @@ local function validateCritterInstance(
 		"appearanceGenome"
 	)
 	appendNestedErrors(errors, validateAbilityGenome(instance.abilityGenome), "abilityGenome")
+	validateStats(errors, instance.baseStats, "baseStats")
+
+	local acquisition = instance.acquisition
+	if
+		type(acquisition) ~= "table"
+		or not isIdentifier(acquisition.source)
+		or not isNonNegativeInteger(acquisition.acquiredAt)
+		or not isPositiveInteger(acquisition.sourceVersion)
+	then
+		addError(
+			errors,
+			"INVALID_ACQUISITION",
+			"Expected valid acquisition metadata",
+			"acquisition"
+		)
+	end
+
+	local breeding = instance.breeding
+	local parentCount = if type(breeding) == "table"
+		then getArrayLength(breeding.parentIds)
+		else nil
+	if
+		type(breeding) ~= "table"
+		or type(breeding.breedable) ~= "boolean"
+		or not isNonNegativeInteger(breeding.generation)
+		or parentCount == nil
+		or parentCount > 2
+	then
+		addError(errors, "INVALID_BREEDING_FLAGS", "Expected valid breeding flags", "breeding")
+	else
+		for index, parentId in breeding.parentIds do
+			validateIdentifier(
+				errors,
+				parentId,
+				`breeding.parentIds[{index}]`,
+				"INVALID_BREEDING_PARENT"
+			)
+		end
+	end
+	if type(instance.tradable) ~= "boolean" then
+		addError(errors, "INVALID_TRADING_FLAG", "tradable must be boolean", "tradable")
+	end
+	local equipmentCount = getArrayLength(instance.equipmentIds)
+	if equipmentCount == nil then
+		addError(
+			errors,
+			"INVALID_EQUIPMENT_REFERENCES",
+			"Expected dense equipment identifier array",
+			"equipmentIds"
+		)
+	else
+		for index, equipmentId in instance.equipmentIds do
+			validateIdentifier(
+				errors,
+				equipmentId,
+				`equipmentIds[{index}]`,
+				"INVALID_EQUIPMENT_REFERENCE"
+			)
+		end
+	end
 
 	if
 		definitionsById ~= nil
