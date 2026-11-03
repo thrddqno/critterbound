@@ -14,6 +14,8 @@ export type CritterModel = {
 	maxHealth: number,
 	shield: number,
 	speed: number,
+	statuses: { any },
+	defeated: boolean,
 }
 export type TeamModel = {
 	id: string,
@@ -45,6 +47,8 @@ export type QueueModel = { card: CardModel, sourceOrder: number }
 export type EnergyModel = { available: number, allocated: number, remaining: number }
 export type BattlePresentationModel = {
 	revision: number,
+	planVersion: number,
+	viewerTeamId: string,
 	battleId: string,
 	roundNumber: number,
 	phase: string,
@@ -56,6 +60,7 @@ export type BattlePresentationModel = {
 	energy: EnergyModel,
 	canPlan: boolean,
 	canRequestCommit: boolean,
+	matchOutcome: any?,
 }
 export type AuthoritativePresentationSnapshot = {
 	revision: number,
@@ -66,8 +71,10 @@ export type AuthoritativePresentationSnapshot = {
 	cardInstancesById: { [string]: any },
 	cardDefinitionsById: { [string]: any },
 	shieldsByCombatantId: { [string]: number },
+	effectiveSpeedByCombatantId: { [string]: number }?,
 	initiativeCombatantIds: { string },
 	visibleQueuedCards: { any },
+	matchOutcome: any?,
 }
 export type PresentationResult =
 	{ ok: true, value: BattlePresentationModel }
@@ -178,7 +185,10 @@ local function map(snapshot: any): PresentationResult
 						health = combatant.currentHealth,
 						maxHealth = combatant.stats.maxHealth,
 						shield = (snapshot.shieldsByCombatantId or {})[combatant.id] or 0,
-						speed = combatant.stats.speed,
+						speed = (snapshot.effectiveSpeedByCombatantId or {})[combatant.id]
+							or combatant.stats.speed,
+						statuses = combatant.statusEffects or {},
+						defeated = combatant.currentHealth <= 0,
 					}
 					table.insert(teamCritters, model)
 					table.insert(critterModels, model)
@@ -318,10 +328,13 @@ local function map(snapshot: any): PresentationResult
 	end
 
 	local energy = roundState.energy
+	local allocated = roundState.reservedEnergy or 0
 	return {
 		ok = true,
 		value = {
 			revision = snapshot.revision,
+			planVersion = snapshot.planVersion or 0,
+			viewerTeamId = snapshot.viewerTeamId,
 			battleId = battle.id,
 			roundNumber = battle.roundNumber,
 			phase = battle.phase,
@@ -330,9 +343,14 @@ local function map(snapshot: any): PresentationResult
 			hand = hand,
 			visibleQueue = visibleQueue,
 			initiative = initiative,
-			energy = { available = energy, allocated = 0, remaining = energy },
+			energy = {
+				available = energy,
+				allocated = allocated,
+				remaining = energy - allocated,
+			},
 			canPlan = battle.phase == "PLANNING" and not roundState.committed,
 			canRequestCommit = battle.phase == "PLANNING" and not roundState.committed,
+			matchOutcome = snapshot.matchOutcome,
 		},
 	}
 end

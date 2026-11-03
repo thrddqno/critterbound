@@ -1,7 +1,7 @@
 # Data Models
 
-Run 4B defines combat contracts and a deterministic resolution result. It still does not define
-storage formats, network messages, or production persistence.
+Run 5 uses the combat contracts in a versioned request protocol and sanitized snapshot projection.
+It still does not define profile storage formats or production persistence.
 
 ## Static definitions
 
@@ -43,7 +43,7 @@ genomes:
 - `AbilityGenome`: exactly four unique combat ability identifiers.
 
 Changing appearance data cannot modify ability data. No inheritance, breeding, mutation, level,
-equipment, or persistence behavior exists in Run 4B.
+equipment, or persistence behavior exists through Run 5.
 
 `CardInstance` identifies one physical deck/hand card and its source Critter instance. It references
 a static card definition rather than duplicating card rules.
@@ -115,6 +115,26 @@ BattleOutcome = {
 Failure uses the standard `{ ok = false, errors = { DomainError } }` shape. The returned state is a
 deep copy. The input state and static definitions are never mutated.
 
+## Network requests and snapshots
+
+`BattleRequest` accepts `{ kind, ... }` tables. `COMMAND` carries a versioned
+`BattleCommandEnvelope`; restart carries an idempotent `requestId`. Responses use the same tagged
+success/failure shape as domain modules. Resolution responses contain:
+
+```text
+{
+  preSnapshot: BattleSnapshot,
+  events: { BattleEvent },
+  finalSnapshot: BattleSnapshot,
+  matchOutcome: BattleOutcome?,
+}
+```
+
+`BattleSnapshot` contains public combat state plus viewer-owned hand, queue, energy, reserved energy,
+and plan version. It also projects shield totals, effective Speed, latest initiative, and outcome.
+Opponent hand IDs, queued cards during planning, draw order, RNG state, and command receipts are
+omitted.
+
 ## Battle events
 
 `BattleEvent` is an ordered, serializable output envelope:
@@ -175,5 +195,5 @@ Run 4B validation adds:
 
 Authored static and persistent schemas currently use version `1`. Runtime `BattleState` uses
 `schemaVersion = 2`; Run 4B added optional battle fields without changing the meaning of existing
-ones. Future persisted schema changes require explicit migrations. Network protocol versioning
-remains separate because a data migration and protocol change are not equivalent.
+ones. Network protocol versioning remains separate because a data migration and protocol change are
+not equivalent. Future persisted schema changes require explicit migrations.

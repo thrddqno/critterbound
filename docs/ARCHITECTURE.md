@@ -9,7 +9,7 @@ pure gameplay logic. Shared modules must not use GUI, DataStore, or server-only 
 
 ### Server
 
-`src/server` owns authoritative gameplay and persistent state. Future battle commands, breeding,
+`src/server` owns authoritative gameplay and future persistent state. Battle commands, breeding,
 inventories, equipment, and trades are accepted only after server validation. Client messages are
 requests, never trusted state transitions.
 
@@ -34,14 +34,15 @@ the same source remains pure and testable on Linux without changing production m
 
 ## Server authority
 
-Future remote requests require schema checks, ownership checks, state checks, and rate limits.
-Server-generated events become the source of truth. Secrets and private profile data never enter
-`ReplicatedStorage`.
+Run 5 exposes one `ReplicatedStorage.Remotes.BattleRequest` `RemoteFunction`. Request kinds are
+`START_BATTLE`, `COMMAND`, `REQUEST_SNAPSHOT`, and `RESTART_BATTLE`. Roblox supplies the authenticated
+`Player.UserId`; request payloads never establish identity or ownership.
 
-Run 4B resolution is deliberately not wired to remote transport yet. A server caller must load
-authoritative state and card definitions, call `RoundResolver.resolveRound`, persist the returned
-state, append the returned events, and only then project or broadcast sanitized data. The resolver
-itself performs no I/O and trusts only its caller-supplied state.
+`BattleService` owns one in-memory session per player. It validates command envelopes through
+`BattleCommandProcessor`, plans AI cards through the same command path, resolves committed plans
+exactly once, and projects only viewer-safe state. Raw state, RNG state, opponent hands and plans,
+and command receipts never enter replicated snapshots. Disconnect removes the session. Persistence
+and explicit rate limiting remain future work.
 
 ## Persistent data
 
@@ -61,9 +62,9 @@ Pure modules under `Validation` and `Battle` accept data and return new results 
 callers. They intentionally avoid Roblox services, networking, persistence, and hidden global
 state. This permits deterministic Lune tests on Linux and reuse under Roblox.
 
-Validators establish structural trust boundaries but do not authorize remote requests. Future
-server code must still load authoritative state, enforce phase and replay rules, rate-limit
-requests, and ignore client-provided results.
+Validators establish structural trust boundaries but do not authorize remote requests. Server code
+loads authoritative state, enforces ownership, phase, stale-version, and replay rules, and ignores
+client-provided results.
 
 Run 4A adds pure battle construction/planning under `Shared/Battle`. Authoritative command receipts
 and sanitized projections remain under `Server/Services`. Authenticated user identity enters command
@@ -113,9 +114,10 @@ identifier. Event IDs derive only from battle ID and a monotonic sequence. No wa
 order, or uncontrolled RNG call enters the event stream. Identical state, plans, definitions, and RNG
 state therefore produce identical state and events.
 
-## Compatibility notes
+## Run 5 presentation flow
 
-Run 4A planning, projection, and Studio mock presentation continue to operate unchanged. The
-projector does not yet derive shield totals or initiative previews from Run 4B state, and the client
-does not yet render resolved events. That wiring belongs to the transport and presentation
-integration run.
+`BattleProjector` derives shield totals, effective Speed, reserved energy, initiative, status state,
+and outcome while preserving hidden information. `BattlePresentationMapper` converts that snapshot
+to UI props. On resolution, transport returns a committed pre-resolution snapshot, ordered events,
+and final snapshot. Pure `BattlePlayback` applies each event in order; final HP and outcome are not
+shown before their events. Playback epochs cancel stale work during restart or controller teardown.

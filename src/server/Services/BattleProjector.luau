@@ -37,8 +37,20 @@ local function project(state, authenticatedUserId: number, context)
 	local visibleCardDefinitions = {}
 	local visibleQueuedCards = {}
 	local projectedRoundStates = {}
+	local shieldsByCombatantId = {}
+	local effectiveSpeedByCombatantId = {}
 	local viewerPlanVersion = 0
 	local revealPlans = state.phase == "COMMITTED"
+	for _, combatant in state.combatants do
+		local shieldTotal = 0
+		for _, shield in combatant.shields or {} do
+			shieldTotal += shield.amount or 0
+		end
+		shieldsByCombatantId[combatant.id] = shieldTotal
+		effectiveSpeedByCombatantId[combatant.id] = if context.statusEffects ~= nil
+			then context.statusEffects.effectiveSpeed(combatant)
+			else combatant.stats.speed
+	end
 
 	for _, teamState in state.teamRoundStates do
 		local own = teamState.teamId == viewerTeam.id
@@ -71,6 +83,7 @@ local function project(state, authenticatedUserId: number, context)
 		table.insert(projectedRoundStates, {
 			teamId = teamState.teamId,
 			energy = if own then teamState.energy else nil,
+			reservedEnergy = if own then teamState.reservedEnergy else nil,
 			handCardInstanceIds = handIds,
 			handCount = #teamState.handCardInstanceIds,
 			drawPileCount = #(teamState.drawPileCardInstanceIds or {}),
@@ -98,9 +111,11 @@ local function project(state, authenticatedUserId: number, context)
 			critterDefinitionsById = clone(context.critterDefinitionsById),
 			cardInstancesById = visibleCardInstances,
 			cardDefinitionsById = visibleCardDefinitions,
-			shieldsByCombatantId = {},
-			initiativeCombatantIds = {},
+			shieldsByCombatantId = shieldsByCombatantId,
+			effectiveSpeedByCombatantId = effectiveSpeedByCombatantId,
+			initiativeCombatantIds = clone(context.initiativeCombatantIds or {}),
 			visibleQueuedCards = visibleQueuedCards,
+			matchOutcome = clone(context.matchOutcome),
 		},
 	}
 end

@@ -11,6 +11,9 @@ export type Props = {
 	asset: any,
 	side: "ALLY" | "ENEMY",
 	compact: boolean?,
+	selectable: boolean?,
+	highlighted: boolean?,
+	onActivated: ((string) -> ())?,
 }
 
 function CritterView.mount(parent: Instance, props: Props)
@@ -74,11 +77,39 @@ function CritterView.mount(parent: Instance, props: Props)
 	speed.TextXAlignment = Enum.TextXAlignment.Left
 	speed.Parent = root
 
+	local targetButton = Instance.new("TextButton")
+	targetButton.Name = "TargetButton"
+	targetButton.BackgroundTransparency = 1
+	targetButton.Size = UDim2.fromScale(1, 1)
+	targetButton.Text = ""
+	targetButton.ZIndex = 10
+	targetButton.Parent = root
+	local currentProps = props
+	local targetConnection = targetButton.Activated:Connect(function()
+		if currentProps.selectable and currentProps.onActivated ~= nil then
+			currentProps.onActivated(currentProps.critter.id)
+		end
+	end)
+
 	local function update(nextProps: Props)
-		root.BorderColor3 = if nextProps.side == "ALLY" then Theme.Ally else Theme.Enemy
+		currentProps = nextProps
+		root.BorderColor3 = if nextProps.highlighted or nextProps.selectable
+			then Theme.Action
+			elseif nextProps.side == "ALLY" then Theme.Ally
+			else Theme.Enemy
+		root.BorderSizePixel = if nextProps.highlighted or nextProps.selectable then 4 else 2
 		title.Text = `{nextProps.critter.displayName} · {nextProps.critter.class}`
 		identity.Text = nextProps.critter.id
-		speed.Text = `Speed {nextProps.critter.speed}`
+		local statuses = {}
+		for _, status in nextProps.critter.statuses or {} do
+			table.insert(statuses, `{status.statusId} x{status.stackCount or 1}`)
+		end
+		speed.Text = `Speed {nextProps.critter.speed}{if #statuses > 0
+			then " · " .. table.concat(statuses, ", ")
+			else ""}`
+		title.TextTransparency = if nextProps.critter.defeated then 0.45 else 0
+		artHost.Visible = not nextProps.critter.defeated
+		targetButton.Active = nextProps.selectable == true
 		assetHandle.update({
 			asset = nextProps.asset,
 			aspectRatio = 1,
@@ -94,6 +125,7 @@ function CritterView.mount(parent: Instance, props: Props)
 		instance = root,
 		update = update,
 		destroy = function()
+			targetConnection:Disconnect()
 			assetHandle.destroy()
 			healthHandle.destroy()
 			root:Destroy()

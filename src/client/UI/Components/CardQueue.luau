@@ -11,6 +11,7 @@ export type Props = {
 	locked: boolean,
 	compact: boolean?,
 	onRemove: (string) -> (),
+	onReorder: ((string, number) -> ())?,
 }
 
 function CardQueue.mount(parent: Instance, props: Props)
@@ -94,7 +95,7 @@ function CardQueue.mount(parent: Instance, props: Props)
 					else Theme.Background
 				button.BorderColor3 = Theme.Border
 				button.Position = UDim2.fromOffset(6 + (entryIndex - 1) * (cardWidth + 4), 22)
-				button.Size = UDim2.new(0, cardWidth, 1, -26)
+				button.Size = UDim2.new(0, cardWidth - 34, 1, -26)
 				button.Text =
 					`#{entry.sourceOrder}  {entry.card.displayName}\nEnergy {entry.card.energyCost}{if nextProps.locked
 						then ""
@@ -113,6 +114,32 @@ function CardQueue.mount(parent: Instance, props: Props)
 						end
 					end)
 				)
+				for offset, direction in { -1, 1 } do
+					local reorder = Instance.new("TextButton")
+					reorder.Name = if direction < 0 then "MoveLeft" else "MoveRight"
+					reorder.BackgroundColor3 = Theme.Panel
+					reorder.BorderColor3 = Theme.Border
+					reorder.Position = UDim2.fromOffset(
+						6 + (entryIndex - 1) * (cardWidth + 4) + cardWidth - 32,
+						22 + (offset - 1) * 24
+					)
+					reorder.Size = UDim2.fromOffset(32, 22)
+					reorder.Text = if direction < 0 then "<" else ">"
+					reorder.TextColor3 = Theme.Text
+					reorder.Active = not nextProps.locked
+						and nextProps.onReorder ~= nil
+						and entryIndex + direction >= 1
+						and entryIndex + direction <= #group.entries
+					reorder.Parent = groupFrame
+					table.insert(
+						connections,
+						reorder.Activated:Connect(function()
+							if reorder.Active and nextProps.onReorder ~= nil then
+								nextProps.onReorder(entry.card.id, entry.sourceOrder + direction)
+							end
+						end)
+					)
+				end
 			end
 		end
 	end

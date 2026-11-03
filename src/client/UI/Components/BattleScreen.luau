@@ -19,8 +19,14 @@ export type Props = {
 	resolveAsset: (string) -> any,
 	onCardSelected: (any) -> (),
 	onRemoveCard: (string) -> (),
+	onReorderCard: (string, number) -> (),
+	onCritterSelected: (string) -> (),
 	onCommit: () -> (),
 	onReset: () -> (),
+	onRestart: () -> (),
+	selectableTargetIds: { string },
+	activeCombatantIds: { string },
+	requestPending: boolean?,
 	message: string?,
 }
 
@@ -128,6 +134,36 @@ function BattleScreen.mount(parent: Instance, props: Props)
 	})
 	local resetHandle = ResetButton.mount(controls, { onActivated = props.onReset })
 
+	local resultOverlay = Instance.new("Frame")
+	resultOverlay.Name = "BattleResultOverlay"
+	resultOverlay.BackgroundColor3 = Theme.Background
+	resultOverlay.BackgroundTransparency = 0.08
+	resultOverlay.BorderColor3 = Theme.Action
+	resultOverlay.BorderSizePixel = 3
+	resultOverlay.Position = UDim2.fromScale(0.25, 0.25)
+	resultOverlay.Size = UDim2.fromScale(0.5, 0.5)
+	resultOverlay.ZIndex = 20
+	resultOverlay.Visible = false
+	resultOverlay.Parent = screen
+	local resultText = Instance.new("TextLabel")
+	resultText.BackgroundTransparency = 1
+	resultText.Position = UDim2.fromScale(0.1, 0.15)
+	resultText.Size = UDim2.fromScale(0.8, 0.4)
+	resultText.TextColor3 = Theme.Text
+	resultText.TextScaled = true
+	resultText.ZIndex = 21
+	resultText.Parent = resultOverlay
+	local restartButton = Instance.new("TextButton")
+	restartButton.BackgroundColor3 = Theme.Action
+	restartButton.Position = UDim2.fromScale(0.25, 0.65)
+	restartButton.Size = UDim2.fromScale(0.5, 0.2)
+	restartButton.Text = "Restart Training Grounds"
+	restartButton.TextColor3 = Theme.Text
+	restartButton.TextScaled = true
+	restartButton.ZIndex = 21
+	restartButton.Parent = resultOverlay
+	local restartConnection = restartButton.Activated:Connect(props.onRestart)
+
 	local messageLabel = Instance.new("TextLabel")
 	messageLabel.Name = "LocalPlanningMessage"
 	messageLabel.BackgroundColor3 = Theme.Panel
@@ -154,6 +190,9 @@ function BattleScreen.mount(parent: Instance, props: Props)
 			teams = currentProps.model.teams,
 			resolveAsset = currentProps.resolveAsset,
 			compact = compact,
+			selectableTargetIds = currentProps.selectableTargetIds,
+			activeCombatantIds = currentProps.activeCombatantIds,
+			onCritterSelected = currentProps.onCritterSelected,
 		})
 		queueHandle.update({
 			entries = currentProps.planningState.queuedCards,
@@ -161,6 +200,7 @@ function BattleScreen.mount(parent: Instance, props: Props)
 			locked = currentProps.planningState.committed,
 			compact = compact,
 			onRemove = currentProps.onRemoveCard,
+			onReorder = currentProps.onReorderCard,
 		})
 		handHandle.update({
 			cards = currentProps.model.hand,
@@ -171,12 +211,29 @@ function BattleScreen.mount(parent: Instance, props: Props)
 		})
 		commitHandle.update({
 			committed = currentProps.planningState.committed,
-			disabled = not currentProps.model.canRequestCommit
+			disabled = currentProps.requestPending
+				or not currentProps.model.canRequestCommit
 				or currentProps.planningState.committed,
 			onActivated = currentProps.onCommit,
 		})
-		resetHandle.update({ onActivated = currentProps.onReset })
+		resetHandle.update({
+			onActivated = if currentProps.model.matchOutcome ~= nil
+				then currentProps.onRestart
+				else currentProps.onReset,
+			label = if currentProps.model.matchOutcome ~= nil
+				then "Restart battle"
+				else "Clear plan",
+			disabled = currentProps.requestPending,
+		})
 		messageLabel.Text = currentProps.message or ""
+		local outcome = currentProps.model.matchOutcome
+		resultOverlay.Visible = outcome ~= nil
+		if outcome ~= nil then
+			resultText.Text = if outcome.isDraw
+				then "DRAW"
+				elseif outcome.winnerTeamId == currentProps.model.viewerTeamId then "VICTORY"
+				else "DEFEAT"
+		end
 	end
 
 	local function applyLayout()
@@ -252,6 +309,8 @@ function BattleScreen.mount(parent: Instance, props: Props)
 			handHandle.destroy()
 			commitHandle.destroy()
 			resetHandle.destroy()
+			restartConnection:Disconnect()
+			resultOverlay:Destroy()
 			screen:Destroy()
 		end,
 	})

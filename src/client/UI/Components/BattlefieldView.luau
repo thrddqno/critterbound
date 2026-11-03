@@ -9,6 +9,9 @@ export type Props = {
 	teams: { any },
 	resolveAsset: (string) -> any,
 	compact: boolean?,
+	selectableTargetIds: { string }?,
+	activeCombatantIds: { string }?,
+	onCritterSelected: ((string) -> ())?,
 }
 
 function BattlefieldView.mount(parent: Instance, props: Props)
@@ -34,6 +37,14 @@ function BattlefieldView.mount(parent: Instance, props: Props)
 
 	local function update(nextProps: Props)
 		clear()
+		local selectable = {}
+		for _, id in nextProps.selectableTargetIds or {} do
+			selectable[id] = true
+		end
+		local active = {}
+		for _, id in nextProps.activeCombatantIds or {} do
+			active[id] = true
+		end
 		for teamIndex, team in nextProps.teams do
 			local row = Instance.new("Frame")
 			row.Name = if team.side == "ALLY" then "PlayerTeam" else "EnemyTeam"
@@ -76,6 +87,9 @@ function BattlefieldView.mount(parent: Instance, props: Props)
 					asset = nextProps.resolveAsset(critter.assetId),
 					side = team.side,
 					compact = nextProps.compact,
+					selectable = selectable[critter.id] == true,
+					highlighted = active[critter.id] == true,
+					onActivated = nextProps.onCritterSelected,
 				})
 				handle.instance.LayoutOrder = critter.slot
 				table.insert(handles, handle)

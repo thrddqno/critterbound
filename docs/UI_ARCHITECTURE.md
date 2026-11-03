@@ -1,23 +1,24 @@
 # UI Architecture
 
-Run 3 provides a plain Studio-only battle shell. It demonstrates data flow and component ownership;
-it does not submit commands, resolve combat, or represent authoritative state.
+Run 5 retains the component shell and wires it to authoritative Training Grounds snapshots,
+commands, ordered event playback, terminal results, and restart.
 
 ## Data flow
 
 ```text
-Studio bootstrap
-  -> MockBattleSession
+Client bootstrap
+  -> BattleRequest
+  -> sanitized server snapshot
   -> BattlePresentationMapper
   -> BattleScreenController
   -> BattleScreen component tree
-  -> local callback
-  -> PlanningState
-  -> component update
+  -> command callback
+  -> authoritative response
+  -> BattlePlayback events
+  -> final snapshot reconciliation
 ```
 
-Future server snapshots replace `MockBattleSession`. Mapper and components remain unchanged.
-Opponent private plans must never enter a client snapshot during planning.
+Opponent private plans never enter a client snapshot during planning.
 
 ## Component hierarchy
 
@@ -34,7 +35,8 @@ BattleScreen
 ├── CardHand
 │   └── CardView
 ├── CommitButton
-└── ResetButton
+├── ResetButton
+└── BattleResultOverlay
 ```
 
 Components use `mount(parent, props)` and return handles with `update(props)` and `destroy()`.
@@ -43,21 +45,19 @@ they do not access server services or mutate battle state.
 
 ## Presentation boundary
 
-`BattlePresentationMapper` converts a future authoritative snapshot into client-owned view data. It
+`BattlePresentationMapper` converts an authoritative snapshot into client-owned view data. It
 resolves stable references, orders viewer team first, preserves hand order, and preserves supplied
 initiative order. It never calculates initiative or combat outcomes.
 
-Shield values remain an explicit snapshot projection because Run 2 has not defined shield gameplay
-semantics. Missing references return structured errors instead of partially rendering unsafe data.
+Shield totals, effective Speed, statuses, reserved energy, initiative, and outcome are explicit
+server projections. Missing references return structured errors instead of partially rendering data.
 
 ## Local planning
 
-`PlanningState` is immutable local intent. It supports queueing unique card instances, removal,
-energy preview, commit lock, and reset. These checks improve interaction only. Future server command
-validation remains authoritative.
-
-Run 3 mounts the shell only when `RunService:IsStudio()` is true. No render loop, animation
-scheduler, networking, or global store is present.
+Target selection is client interaction state, but chosen IDs are validated by the server. Queue,
+remove, reorder, clear, and commit responses replace local planning state with authoritative
+snapshots. Command input locks while a request is pending or playback runs. Restart increments a playback
+epoch so delayed events cannot overwrite the fresh battle.
 
 ## Stabilized layout
 

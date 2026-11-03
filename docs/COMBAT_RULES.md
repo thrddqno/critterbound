@@ -238,4 +238,12 @@ definitions, and RNG state produce identical state and event streams.
 - Status refresh semantics beyond stack cap and expiry extension
 - Multi-team battles and non-frontline positioning
 - Equipment, abilities outside card effects, and persistent progression
-- Client prediction, animation timing, and network transport
+- Production animation timing and audiovisual presentation
+
+## Run 5 playback contract
+
+The server returns a committed pre-resolution snapshot, ordered events, and final authoritative
+snapshot. Client playback starts from the pre-snapshot and applies events sequentially. HP, shields,
+statuses, defeats, initiative, and match outcome become visible only when their corresponding event
+is applied. The final snapshot reconciles presentation after playback; it never determines event
+order or combat results.

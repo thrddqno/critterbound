@@ -3,14 +3,14 @@
 local Theme = require(script.Parent.Parent.Theme)
 local ResetButton = {}
 
-export type Props = { onActivated: () -> () }
+export type Props = { onActivated: () -> (), label: string?, disabled: boolean? }
 
 function ResetButton.mount(parent: Instance, props: Props)
 	local button = Instance.new("TextButton")
 	button.Name = "ResetButton"
 	button.BackgroundColor3 = Theme.PanelAlt
 	button.TextColor3 = Theme.Text
-	button.Text = "Reset mock plan"
+	button.Text = props.label or "Clear plan"
 	button.TextSize = 14
 	button.Parent = parent
 	local current = props
@@ -19,7 +19,11 @@ function ResetButton.mount(parent: Instance, props: Props)
 	end)
 	local function update(nextProps: Props)
 		current = nextProps
+		button.Text = nextProps.label or "Clear plan"
+		button.Active = not nextProps.disabled
+		button.AutoButtonColor = not nextProps.disabled
 	end
+	update(props)
 	return table.freeze({
 		instance = button,
 		update = update,

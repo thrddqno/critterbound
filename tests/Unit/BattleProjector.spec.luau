@@ -8,6 +8,7 @@ return function(Harness)
 	local Rng = require("../../src/shared/Battle/DeterministicRng")
 	local Deck = require("../../src/shared/Battle/Deck")
 	local Validator = require("../../src/shared/Validation/DomainValidator")
+	local StatusEffects = require("../../src/shared/Battle/StatusEffects")
 	local Fixtures = require("../Fixtures/Run4Fixtures")
 
 	local function setup()
@@ -119,5 +120,38 @@ return function(Harness)
 		Harness.expect(
 			Harness.hasError(Projector.project(state, 999, context), "VIEWER_NOT_IN_BATTLE")
 		)
+	end)
+
+	Harness.test("projection synchronizes shields effective Speed and allocated energy", function()
+		local state, _, context = setup()
+		local combatant = state.combatants[1]
+		combatant.shields = {
+			{ id = "shield.1", sourceCombatantId = combatant.id, amount = 7, expiresAtRound = 1 },
+			{ id = "shield.2", sourceCombatantId = combatant.id, amount = 5, expiresAtRound = 1 },
+		}
+		combatant.statusEffects = {
+			{
+				id = "speed.1",
+				statusId = "SPEED_UP",
+				sourceCombatantId = combatant.id,
+				targetCombatantId = combatant.id,
+				magnitude = 4,
+				duration = 2,
+				stackCount = 2,
+				appliedRound = 1,
+				expiresAtRound = 2,
+			},
+		}
+		teamState(state, "team.1").reservedEnergy = 2
+		context.statusEffects = StatusEffects
+		context.initiativeCombatantIds = { combatant.id }
+		local projected = Projector.project(state, 101, context)
+		Harness.equal(projected.value.shieldsByCombatantId[combatant.id], 12)
+		Harness.equal(
+			projected.value.effectiveSpeedByCombatantId[combatant.id],
+			combatant.stats.speed + 8
+		)
+		Harness.equal(projected.value.battleState.teamRoundStates[1].reservedEnergy, 2)
+		Harness.deepEqual(projected.value.initiativeCombatantIds, { combatant.id })
 	end)
 end

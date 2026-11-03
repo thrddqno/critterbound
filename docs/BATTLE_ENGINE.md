@@ -1,7 +1,7 @@
 # Battle Planning Engine
 
-Run 4A implements deterministic battle initialization and server-authoritative planning. It does
-not execute cards or advance rounds.
+Run 4A implements deterministic battle initialization and server-authoritative planning. Run 4B
+executes cards and advances rounds; Run 5 integrates both through `BattleService`.
 
 ## Initialization
 
@@ -49,12 +49,12 @@ queue, public combatants, zone counts, and commitment status. Opponent hand IDs,
 draw order, RNG state, and command receipts remain absent. Both queues reveal only after phase
 reaches `COMMITTED`.
 
-## Run 5 adapter
+## Run 5 service
 
-Networking should serialize commands per battle session, invoke `BattleCommandProcessor.process`
-with authenticated `Player.UserId`, persist returned session in server memory, then call
-`BattleProjector.project`. Projected shape remains compatible with `BattlePresentationMapper`.
-Never replicate raw `BattleState` or `processedCommandsById`.
+`BattleService` serializes commands per player session, invokes `BattleCommandProcessor.process`
+with authenticated `Player.UserId`, sends deterministic AI requests through the same processor,
+resolves both committed plans, and calls `BattleProjector.project`. Exact command replays return
+stored receipts without resolving twice. Restart IDs are also idempotent. Player disconnect removes
+the in-memory session. Raw `BattleState` and `processedCommandsById` are never replicated.
 
-Rate limiting, disconnect policy, command receipt pruning, persistence, and remote transport remain
-future work.
+Production rate limiting, receipt pruning, and persistence remain future work.

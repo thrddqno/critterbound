@@ -9,6 +9,14 @@ local Protocol = table.freeze({
 		CLEAR_PLAN = "CLEAR_PLAN",
 		COMMIT_PLAN = "COMMIT_PLAN",
 	}),
+	RequestKinds = table.freeze({
+		START_BATTLE = "START_BATTLE",
+		COMMAND = "COMMAND",
+		REQUEST_SNAPSHOT = "REQUEST_SNAPSHOT",
+		RESTART_BATTLE = "RESTART_BATTLE",
+	}),
+	RemoteFolderName = "Remotes",
+	BattleRequestName = "BattleRequest",
 })
 
 return Protocol
