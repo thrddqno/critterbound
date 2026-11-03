@@ -12,11 +12,21 @@ export type AssetCategory =
 	| "UI_TEXTURE"
 	| "VISUAL_EFFECT"
 
+export type SpritePlacement = {
+	slot: string,
+	canvasSize: { width: number, height: number },
+	pivot: { x: number, y: number },
+	position: { x: number, y: number },
+	size: { width: number, height: number },
+}
+
 export type AssetEntry = {
 	id: string,
 	category: AssetCategory,
 	image: string?,
 	fallbackId: string?,
+	importSlot: string?,
+	sprite: SpritePlacement?,
 }
 
 export type ResolvedAsset = {
@@ -26,20 +36,45 @@ export type ResolvedAsset = {
 	image: string?,
 	isPlaceholder: boolean,
 	label: string,
+	importSlot: string?,
+	sprite: SpritePlacement?,
 }
 
 export type Registry = {
 	resolve: (self: Registry, id: string) -> ResolvedAsset,
 	has: (self: Registry, id: string) -> boolean,
+	diagnostics: (self: Registry) -> any,
 }
 
 local AssetRegistry = {}
+local function requireValidator()
+	if script ~= nil then
+		return require(script.Parent.AssetManifestValidator)
+	end
+	return require("./AssetManifestValidator")
+end
+local AssetManifestValidator = requireValidator()
 
 local function isImageUri(value: unknown): boolean
 	return type(value) == "string" and string.match(value, "^rbxassetid://%d+$") ~= nil
 end
 
 local function new(entries: { AssetEntry }): Registry
+	local validation = AssetManifestValidator.validate(entries)
+	if not validation.ok then
+		local firstError = nil
+		for _, value in validation.diagnostics do
+			if value.severity == "ERROR" then
+				firstError = value
+				break
+			end
+		end
+		error(
+			`Asset manifest validation failed: {if firstError ~= nil
+				then firstError.code .. ": " .. firstError.message
+				else "unknown error"}`
+		)
+	end
 	local catalog: { [string]: AssetEntry } = {}
 
 	for _, entry in entries do
@@ -50,6 +85,8 @@ local function new(entries: { AssetEntry }): Registry
 			category = entry.category,
 			image = entry.image,
 			fallbackId = entry.fallbackId,
+			importSlot = entry.importSlot,
+			sprite = entry.sprite,
 		})
 	end
 
@@ -57,6 +94,10 @@ local function new(entries: { AssetEntry }): Registry
 
 	function registry:has(id: string): boolean
 		return catalog[id] ~= nil
+	end
+
+	function registry:diagnostics()
+		return validation
 	end
 
 	function registry:resolve(id: string): ResolvedAsset
@@ -78,6 +119,8 @@ local function new(entries: { AssetEntry }): Registry
 					image = entry.image,
 					isPlaceholder = false,
 					label = currentId,
+					importSlot = entry.importSlot,
+					sprite = entry.sprite,
 				}
 			end
 			if entry.fallbackId == nil then
@@ -88,6 +131,8 @@ local function new(entries: { AssetEntry }): Registry
 					image = nil,
 					isPlaceholder = true,
 					label = `Placeholder\n{requestedId}`,
+					importSlot = entry.importSlot,
+					sprite = entry.sprite,
 				}
 			end
 			currentId = entry.fallbackId
@@ -100,6 +145,8 @@ local function new(entries: { AssetEntry }): Registry
 			image = nil,
 			isPlaceholder = true,
 			label = `Missing asset\n{requestedId}`,
+			importSlot = nil,
+			sprite = nil,
 		}
 	end
 

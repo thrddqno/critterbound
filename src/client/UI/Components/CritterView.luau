@@ -1,19 +1,20 @@
 --!strict
 
 local Theme = require(script.Parent.Parent.Theme)
-local PlaceholderRenderer = require(script.Parent.Parent.Parent.Rendering.PlaceholderRenderer)
+local CritterSpriteRig = require(script.Parent.Parent.Parent.Rendering.CritterSpriteRig)
 local CritterHealthBar = require(script.Parent.CritterHealthBar)
 
 local CritterView = {}
 
 export type Props = {
 	critter: any,
-	asset: any,
+	resolveAsset: (string) -> any,
 	side: "ALLY" | "ENEMY",
 	compact: boolean?,
 	selectable: boolean?,
 	highlighted: boolean?,
 	onActivated: ((string) -> ())?,
+	animationCommand: any?,
 }
 
 function CritterView.mount(parent: Instance, props: Props)
@@ -56,12 +57,11 @@ function CritterView.mount(parent: Instance, props: Props)
 	artHost.Size = UDim2.new(1, -8, 1, -81)
 	artHost.Parent = root
 
-	local assetHandle = PlaceholderRenderer.mount(artHost, {
-		asset = props.asset,
-		aspectRatio = 1,
-		dominantAxis = Enum.DominantAxis.Height,
-		placeholderText = `Placeholder\n{props.critter.assetId}`,
-		textSize = 11,
+	local spriteHandle = CritterSpriteRig.mount(artHost, {
+		className = props.critter.class,
+		appearanceGenome = props.critter.appearanceGenome,
+		facing = if props.side == "ALLY" then "RIGHT" else "LEFT",
+		resolveAsset = props.resolveAsset,
 	})
 	local healthHandle = CritterHealthBar.mount(root, props.critter)
 	healthHandle.instance.Position = UDim2.new(0, 4, 1, -39)
@@ -85,6 +85,7 @@ function CritterView.mount(parent: Instance, props: Props)
 	targetButton.ZIndex = 10
 	targetButton.Parent = root
 	local currentProps = props
+	local lastAnimationSequence = nil
 	local targetConnection = targetButton.Activated:Connect(function()
 		if currentProps.selectable and currentProps.onActivated ~= nil then
 			currentProps.onActivated(currentProps.critter.id)
@@ -108,15 +109,21 @@ function CritterView.mount(parent: Instance, props: Props)
 			then " · " .. table.concat(statuses, ", ")
 			else ""}`
 		title.TextTransparency = if nextProps.critter.defeated then 0.45 else 0
-		artHost.Visible = not nextProps.critter.defeated
+		artHost.Visible = true
 		targetButton.Active = nextProps.selectable == true
-		assetHandle.update({
-			asset = nextProps.asset,
-			aspectRatio = 1,
-			dominantAxis = Enum.DominantAxis.Height,
-			placeholderText = `Placeholder\n{nextProps.critter.assetId}`,
-			textSize = if nextProps.compact then 10 else 11,
+		spriteHandle.update({
+			className = nextProps.critter.class,
+			appearanceGenome = nextProps.critter.appearanceGenome,
+			facing = if nextProps.side == "ALLY" then "RIGHT" else "LEFT",
+			resolveAsset = nextProps.resolveAsset,
 		})
+		local command = nextProps.animationCommand
+		if command ~= nil and command.sequence ~= lastAnimationSequence then
+			lastAnimationSequence = command.sequence
+			spriteHandle.play(command.id)
+		elseif nextProps.critter.defeated and spriteHandle.animationState() ~= "DEFEAT" then
+			spriteHandle.play("DEFEAT")
+		end
 		healthHandle.update(nextProps.critter)
 	end
 
@@ -126,7 +133,7 @@ function CritterView.mount(parent: Instance, props: Props)
 		update = update,
 		destroy = function()
 			targetConnection:Disconnect()
-			assetHandle.destroy()
+			spriteHandle.destroy()
 			healthHandle.destroy()
 			root:Destroy()
 		end,

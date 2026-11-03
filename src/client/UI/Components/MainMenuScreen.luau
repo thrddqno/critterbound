@@ -22,12 +22,18 @@ function MainMenuScreen.mount(parent: Instance, props)
 			{ "Collection", props.onCollection },
 			{ "Team Builder", props.onTeamBuilder },
 			{ "Inventory", props.onInventory },
+			{ "Breeding", props.onBreeding },
+			{ "Eggs", props.onEggs },
+			{ "Contracts", props.onContracts },
 			{ "Training Grounds", props.onBattle },
+			{ "Sprite Preview", props.onSpritePreview },
 		}
 	do
-		local button = UIFactory.button(host, entry[1])
-		button.Size = UDim2.new(1, 0, 0, 56)
-		table.insert(connections, button.Activated:Connect(entry[2]))
+		if entry[2] ~= nil then
+			local button = UIFactory.button(host, entry[1])
+			button.Size = UDim2.new(1, 0, 0, 56)
+			table.insert(connections, button.Activated:Connect(entry[2]))
+		end
 	end
 	return table.freeze({
 		update = function() end,

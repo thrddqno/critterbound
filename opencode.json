@@ -1,0 +1,16 @@
+{
+  "mcp": {
+    "servers": {
+      "Roblox_Studio": {
+        "type": "local",
+        "command": [
+          "/home/adioquino/.var/app/org.vinegarhq.Vinegar/data/vinegar/kombucha-proton-stable+20260914101957/bin/wine",
+          "/home/adioquino/.var/app/org.vinegarhq.Vinegar/data/vinegar/versions/version-7062aec9dbe74b14/StudioMCP.exe"
+        ],
+        "environment": {
+          "WINEPREFIX": "/home/adioquino/.var/app/org.vinegarhq.Vinegar/data/vinegar/prefixes/studio"
+        }
+      }
+    }
+  }
+}

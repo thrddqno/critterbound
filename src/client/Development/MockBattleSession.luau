@@ -1,5 +1,14 @@
 --!strict
 
+local function requireGeneRegistry()
+	if script ~= nil then
+		return require(game:GetService("ReplicatedStorage").Shared.Genetics.GeneRegistry)
+	end
+	return require("../../shared/Genetics/GeneRegistry")
+end
+
+local GeneRegistry = requireGeneRegistry()
+
 local definitions = {
 	stone = {
 		schemaVersion = 1,
@@ -7,7 +16,7 @@ local definitions = {
 		displayName = "Bastion",
 		class = "Stone",
 		baseStats = { maxHealth = 120, attack = 20, defense = 35, speed = 10 },
-		abilityIds = { "stone.guard", "stone.riposte", "stone.bulwark", "stone.quake" },
+		abilityIds = { "stone.guard", "stone.bulwark", "stone.quake", "stone.slam" },
 	},
 	feral = {
 		schemaVersion = 1,
@@ -15,7 +24,7 @@ local definitions = {
 		displayName = "Ravager",
 		class = "Feral",
 		baseStats = { maxHealth = 80, attack = 42, defense = 12, speed = 30 },
-		abilityIds = { "feral.strike", "feral.pounce", "feral.rend", "feral.frenzy" },
+		abilityIds = { "feral.strike", "feral.pounce", "feral.frenzy", "feral.rend" },
 	},
 	verdant = {
 		schemaVersion = 1,
@@ -23,7 +32,7 @@ local definitions = {
 		displayName = "Bloom",
 		class = "Verdant",
 		baseStats = { maxHealth = 95, attack = 18, defense = 20, speed = 20 },
-		abilityIds = { "verdant.mend", "verdant.seed", "verdant.renew", "verdant.grove" },
+		abilityIds = { "verdant.mend", "verdant.renew", "verdant.grove", "verdant.seed" },
 	},
 }
 
@@ -68,19 +77,15 @@ for teamIndex = 1, 2 do
 		local definition = definitions[key]
 		local instanceId = `owned.team{teamIndex}.{key}`
 		local combatantId = `combatant.team{teamIndex}.{key}`
+		local genomes = GeneRegistry.defaultGenomes(definition.class)
+		assert(genomes ~= nil, `Missing mock genomes for {definition.class}`)
 		critterInstancesById[instanceId] = {
-			schemaVersion = 1,
+			schemaVersion = 2,
 			id = instanceId,
 			definitionId = definition.id,
 			ownerUserId = 100 + teamIndex,
-			appearanceGenome = {
-				schemaVersion = 1,
-				speciesId = key,
-				bodyVariantId = "default",
-				paletteId = if teamIndex == 1 then "allied" else "enemy",
-				patternId = "default",
-			},
-			abilityGenome = { schemaVersion = 1, abilityIds = definition.abilityIds },
+			appearanceGenome = genomes.appearanceGenome,
+			abilityGenome = genomes.abilityGenome,
 		}
 		table.insert(combatants, {
 			id = combatantId,

@@ -1,22 +1,41 @@
 # Art Integration
 
-Run 3 renders static placeholders only. Artwork replacement must not require gameplay code changes.
+Run 7A.2 accepts modular transparent PNG layers while retaining Run 7A.1 geometric fallback. Artwork
+replacement must not require gameplay code changes. Bloom's pending import contract is documented in
+`BLOOM_SPRITE_IMPORT.md`.
 
 ## Static and layered Critters
 
 Prepare a consistent canvas, transparent background, facing direction, baseline, and anchor point.
-Layered appearance art must share identical dimensions and pivots. Suggested layer order:
+Layered appearance art must share identical dimensions and normalized pivots. Runtime order:
 
 1. Shadow
-2. Base body
-3. Palette or pattern
-4. Body details
-5. Equipment
-6. Battle effects
+2. Tail
+3. Wings
+4. Base body, head, and feet
+5. Color overlay
+6. Markings
+7. Eyes
+8. Mouth
+9. Accessories
 
-Appearance genome fields select visual layer IDs through a future appearance resolver. Ability
-genome fields never select appearance assets. Missing combinations fall back to base sprite and
-never alter combat data.
+Appearance genome fields select logical layer IDs through `AppearanceResolver`. Ability genome
+fields never select appearance assets. Missing combinations use deterministic class/body-rig
+placeholders and never alter combat data. Curated variants may cross classes only when gene metadata
+declares compatibility and the target body rig, shape, and required tags all accept them; body genes
+remain class-locked.
+
+`CritterSpriteModel` converts resolved logical assets into ordered layers. Genetics retain the
+compatibility families `heavy`, `round`, and `agile`; body genes separately select one of six visual
+rig presets: `stone`, `feral`, `verdant`, `tide`, `gale`, or `shade`. `SpriteRigCatalog` owns each
+preset's normalized attachments, palette, style, layer order, and animation offsets. Shadow and mouth
+are structural appearance layers; mouth never derives from ability genes. `CritterSpriteRig` reuses
+GUI instances when genomes change and asks `AssetRegistry` for every logical asset. Missing images use
+the selected class geometry. Full logical asset IDs appear only in the Studio preview inspector.
+
+Real layers carry explicit canvas size, pivot, normalized render position, and normalized render size
+through the asset manifest. A registered image hides only its matching geometric layer; unresolved
+eyes, mouth, tail, accessories, or other parts continue using safe fallback independently.
 
 ## Sprite sheets
 
@@ -31,6 +50,13 @@ layer order, anchors, and playback lifecycle. Before integration, every sheet ne
 - Documented loop and completion behavior
 - Consistent layer registration when animations use separate layers
 
+`SpriteSheetPlayer.frameAt` provides deterministic frame selection for looped and finite clips.
+`CritterSpriteRig.setSheetFrame` applies explicit rectangles. Production sheets should register under
+`creature.animation.<rig>.<state>` and retain static layer assets as fallback.
+
+States are `IDLE`, `ATTACK`, `HIT`, and `DEFEAT`. Attack and hit return to idle after completion;
+defeat persists. Battle events map to animation commands in presentation code only.
+
 AI-generated single illustrations are not assumed to contain valid animation frames or separable
 layers. They require manual preparation and consistency review.
 
@@ -42,10 +68,8 @@ icons need legible shapes at small sizes.
 
 ## Intentionally absent
 
-- Sprite playback scheduler
-- Animation event binding
-- Hit, attack, and defeat transitions
+- Production sprite-sheet scheduler wiring
 - Particle systems and visual effects
-- Equipment compositing
-- Automated genome-to-layer resolution
+- Equipment-specific compositing beyond appearance accessories
+- Approved Bloom PNG layers and Roblox asset IDs
 - Production artwork or Roblox asset IDs

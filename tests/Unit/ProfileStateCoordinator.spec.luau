@@ -1,0 +1,103 @@
+--!strict
+
+return function(Harness)
+	local Coordinator = require("../../src/client/Controllers/ProfileStateCoordinator")
+
+	Harness.test("profile coordinator ignores overlapping reads resolved out of order", function()
+		local state = Coordinator.new()
+		local first = state.beginRead("collection", "read-1")
+		local second = state.beginRead("collection", "read-2")
+		Harness.expect(state.applyRead(second, 4, { marker = "new" }).applied)
+		local old = state.applyRead(first, 4, { marker = "old" })
+		Harness.expect(not old.applied)
+		Harness.equal(old.reason, "OLDER_REQUEST_SEQUENCE")
+		Harness.equal(state.get("collection").marker, "new")
+	end)
+
+	Harness.test("profile coordinator rejects read older than completed mutation", function()
+		local state = Coordinator.new()
+		local oldRead = state.beginRead("collection", "old")
+		Harness.expect(state.applyMutationRevision(8, { "collection" }))
+		local result = state.applyRead(oldRead, 7, { marker = "old" })
+		Harness.expect(not result.applied)
+		Harness.equal(result.reason, "OLDER_PROFILE_REVISION")
+		Harness.equal(state.revision(), 8)
+	end)
+
+	Harness.test("higher revision invalidates other resource snapshots", function()
+		local state = Coordinator.new()
+		Harness.expect(state.applyRead(state.beginRead("collection", "c1"), 2, {}).applied)
+		Harness.expect(state.applyRead(state.beginRead("eggs", "e1"), 2, {}).applied)
+		Harness.expect(state.isFresh("collection"))
+		Harness.expect(state.applyRead(state.beginRead("contracts", "x1"), 3, {}).applied)
+		Harness.equal(state.revision(), 3)
+		Harness.expect(not state.isFresh("collection"))
+		Harness.expect(not state.isFresh("eggs"))
+	end)
+
+	Harness.test("failed or stale mutation can always release global gate", function()
+		local state = Coordinator.new()
+		local first = state.beginMutation("CLAIM", { commandId = "one" })
+		Harness.expect(first ~= nil)
+		Harness.equal(state.beginMutation("HATCH", { commandId = "two" }), nil)
+		Harness.expect(state.finishMutation(first))
+		Harness.expect(not state.mutationPending())
+		Harness.expect(state.beginMutation("HATCH", { commandId = "two" }) ~= nil)
+	end)
+
+	Harness.test("uncertain write preserves exact request for explicit retry", function()
+		local state = Coordinator.new()
+		local request = {
+			commandId = "claim-one",
+			expectedRevision = 11,
+			contractId = "contract:one",
+		}
+		state.rememberUncertain("CLAIM|contract:one", request)
+		Harness.equal(state.uncertainRequest("CLAIM|contract:one"), request)
+		state.clearUncertain("CLAIM|contract:one")
+		Harness.equal(state.uncertainRequest("CLAIM|contract:one"), nil)
+	end)
+
+	Harness.test("mutation resource cannot regress authoritative state", function()
+		local state = Coordinator.new()
+		Harness.expect(state.applyMutationRevision(9, { "collection" }))
+		Harness.expect(state.applyMutationResource("collection", 9, { marker = "new" }))
+		Harness.expect(not state.applyMutationResource("collection", 8, { marker = "old" }))
+		Harness.equal(state.get("collection").marker, "new")
+	end)
+
+	Harness.test("stale mutation refresh advances revision without replaying write", function()
+		local state = Coordinator.new()
+		Harness.expect(state.applyRead(state.beginRead("collection", "initial"), 5, {}).applied)
+		local mutation = state.beginMutation("SET_TEAM", { commandId = "stale" })
+		Harness.expect(mutation ~= nil)
+		state.invalidate("collection")
+		Harness.expect(state.applyRead(state.beginRead("collection", "refresh"), 6, {}).applied)
+		Harness.equal(state.revision(), 6)
+		Harness.expect(state.finishMutation(mutation))
+		Harness.expect(not state.mutationPending())
+	end)
+
+	Harness.test("destroyed controller ignores late response and clears mutation", function()
+		local state = Coordinator.new()
+		local read = state.beginRead("collection", "late")
+		Harness.expect(state.beginMutation("CLAIM", { commandId = "claim" }) ~= nil)
+		state.destroy()
+		local result = state.applyRead(read, 4, { marker = "late" })
+		Harness.expect(not result.applied)
+		Harness.equal(result.reason, "DESTROYED")
+		Harness.expect(not state.mutationPending())
+	end)
+
+	Harness.test("rejoin creates empty coordinator then restores authoritative revision", function()
+		local old = Coordinator.new()
+		Harness.expect(old.applyRead(old.beginRead("collection", "old"), 9, {}).applied)
+		old.destroy()
+		local rejoined = Coordinator.new()
+		Harness.equal(rejoined.revision(), nil)
+		Harness.expect(
+			rejoined.applyRead(rejoined.beginRead("collection", "rejoin"), 12, {}).applied
+		)
+		Harness.equal(rejoined.revision(), 12)
+	end)
+end

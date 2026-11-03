@@ -71,6 +71,34 @@ precedes stale-revision validation; conflicting command-ID reuse fails. Accepted
 invalidate only the active battle snapshot. Session-memory receipts are bounded and cleared on
 disconnect.
 
+Run 7A keeps registries, validators, and resolvers under `Shared/Genetics`; these modules are pure and
+replicated for presentation. `Server/Genetics/InheritanceEngine` alone generates offspring genomes.
+No remote accepts offspring genes. It consumes explicit `PARK_MILLER_V1` state, records every source
+selection, uses bounded deterministic fallback, and defaults mutation off. Battle construction
+resolves four ability genes before creating two physical cards per ability, preserving 24-card teams.
+Curated cross-class genes still resolve through the source Critter's class and trusted registry/card
+metadata; founder genomes are limited to Studio fixtures and Training Grounds opponents.
+
+Run 7E.3 adds `ContractRequest` and a server-owned `ContractService`. Clients may list, accept, inspect,
+and claim contracts, but cannot submit battle outcomes, seeds, genes, classes, reward IDs, or
+completion evidence. `BattleService` alone sends authenticated Training Grounds completion evidence.
+The contract is marked complete only after `ProfileService.UpdateProfile` persists the winning battle
+ID. Claiming creates the Critter, marks the entitlement claimed, and writes a durable redemption in
+one profile mutation.
+
+Claimed display history may be pruned at bounded capacity, but redemption records keyed by contract
+instance survive that pruning. These records return the original Critter for all later retries and
+prevent a second grant. New contracts stop at the redemption capacity rather than deleting lifetime
+idempotency evidence.
+
+Failed completion callbacks remain pending in the active in-memory battle session and retry before
+restart or another start. This prevents acknowledgement before persistence, but does not recover a
+callback across server-process crash. A crash after battle resolution and before the profile write can
+lose that completion. Player removal also performs only one final flush before discarding the session,
+so a simultaneous write outage has the same limitation. Smallest safe follow-up is a durable
+battle-completion outbox keyed by battle ID, written before terminal success is acknowledged and
+consumed idempotently by `ContractService`; durable battle sessions/checkpoints remain future work.
+
 ## Domain contracts
 
 `Types/Domain.luau` separates three data lifetimes:
@@ -134,6 +162,10 @@ Combatant and team traversal always use explicit sort keys: team index, battlefi
 identifier. Event IDs derive only from battle ID and a monotonic sequence. No wall clock, table hash
 order, or uncontrolled RNG call enters the event stream. Identical state, plans, definitions, and RNG
 state therefore produce identical state and events.
+
+Inheritance uses the same explicit RNG contract. Thirty-six child positions consume a fair parent
+draw plus a `75/20/5` allele draw each. Disabled mutation therefore consumes exactly 72 draws. No
+hash traversal, global randomness, or retry loop affects offspring.
 
 ## Run 5 presentation flow
 

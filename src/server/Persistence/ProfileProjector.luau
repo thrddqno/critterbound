@@ -2,6 +2,16 @@
 
 local ProfileProjector = {}
 
+local function requireShared(name: string)
+	if script ~= nil then
+		return require(game:GetService("ReplicatedStorage").Shared.Genetics[name])
+	end
+	return require(`../../shared/Genetics/{name}`)
+end
+
+local AppearanceResolver = requireShared("AppearanceResolver")
+local AbilityResolver = requireShared("AbilityResolver")
+
 local function clone<T>(value: T): T
 	if type(value) ~= "table" then
 		return value
@@ -15,6 +25,16 @@ end
 
 local function projectCritter(instance, catalog)
 	local definition = catalog.getById(instance.definitionId)
+	local appearance = if definition == nil
+		then nil
+		else AppearanceResolver.resolve(instance.appearanceGenome, definition.class)
+	local abilities = if definition == nil
+		then nil
+		else AbilityResolver.resolve(
+			instance.abilityGenome,
+			definition.class,
+			if appearance ~= nil and appearance.ok then appearance.value.speciesId else nil
+		)
 	return {
 		schemaVersion = instance.schemaVersion,
 		id = instance.id,
@@ -24,6 +44,12 @@ local function projectCritter(instance, catalog)
 		ownerUserId = instance.ownerUserId,
 		appearanceGenome = clone(instance.appearanceGenome),
 		abilityGenome = clone(instance.abilityGenome),
+		resolvedAppearance = if appearance == nil or not appearance.ok
+			then nil
+			else clone(appearance.value),
+		resolvedAbilityIds = if abilities == nil or not abilities.ok
+			then {}
+			else clone(abilities.value.abilityIds),
 		baseStats = clone(instance.baseStats),
 		acquisition = clone(instance.acquisition),
 		breeding = clone(instance.breeding),

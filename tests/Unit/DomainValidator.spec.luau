@@ -2,6 +2,7 @@
 
 return function(Harness)
 	local Validator = require("../../src/shared/Validation/DomainValidator")
+	local CardCatalog = require("../../src/shared/Definitions/CardCatalog")
 	local Fixtures = require("../Fixtures/DomainFixtures")
 
 	local definitionsById = {}
@@ -49,16 +50,79 @@ return function(Harness)
 	Harness.test("appearance and ability genomes stay separate", function()
 		local instance = Harness.clone(Fixtures.Instances.Verdant)
 		local abilitiesBefore = Harness.clone(instance.abilityGenome)
-		instance.appearanceGenome.paletteId = "autumn"
+		instance.appearanceGenome.slots.color.D = "gene.appearance.eyes.universal.bright"
 		Harness.deepEqual(instance.abilityGenome, abilitiesBefore)
-		Harness.expect(Validator.validateAppearanceGenome(instance.appearanceGenome).ok)
-		Harness.expect(Validator.validateAbilityGenome(instance.abilityGenome).ok)
+		Harness.expect(
+			not Validator.validateAppearanceGenome(instance.appearanceGenome, "Verdant").ok
+		)
+		Harness.expect(Validator.validateAbilityGenome(instance.abilityGenome, "Verdant").ok)
 	end)
 
 	Harness.test("valid card definitions", function()
 		for _, definition in Fixtures.CardDefinitions do
 			Harness.expect(Validator.validateCardDefinition(definition, validAbilityIds).ok)
 		end
+	end)
+
+	Harness.test("optional ability pool requires unique complete base abilities", function()
+		local definition = Harness.clone(Fixtures.Definitions.Stone)
+		definition.abilityPool = {
+			"stone.guard",
+			"stone.bulwark",
+			"stone.quake",
+			"stone.slam",
+			"stone.rampart",
+		}
+		Harness.expect(Validator.validateCritterDefinition(definition).ok)
+
+		local duplicate = Harness.clone(definition)
+		duplicate.abilityPool[5] = "stone.guard"
+		Harness.expect(
+			Harness.hasError(Validator.validateCritterDefinition(duplicate), "DUPLICATE_ABILITY_ID")
+		)
+
+		local missing = Harness.clone(definition)
+		table.remove(missing.abilityPool, 4)
+		Harness.expect(
+			Harness.hasError(
+				Validator.validateCritterDefinition(missing),
+				"ABILITY_POOL_MISSING_BASE"
+			)
+		)
+	end)
+
+	Harness.test("battle commands accept only explicit cross-class compatibility", function()
+		local bloom = CardCatalog.getByAbilityId("verdant.bloom")
+		Harness.expect(bloom ~= nil)
+		local context = Harness.clone(Fixtures.Context)
+		local stoneId = Fixtures.Combatants.stone.id
+		table.insert(context.combatantsById[stoneId].abilityIds, "verdant.bloom")
+		local cardInstance = {
+			id = "hand.stone.bloom.1",
+			definitionId = bloom.id,
+			sourceCritterInstanceId = Fixtures.Instances.Stone.id,
+		}
+		context.cardInstancesById[cardInstance.id] = cardInstance
+		context.cardDefinitionsById[bloom.id] = bloom
+		table.insert(context.handCardInstanceIds, cardInstance.id)
+		local command = Harness.clone(Fixtures.ValidCommand)
+		command.queuedCards = {
+			{
+				cardInstanceId = cardInstance.id,
+				sourceCombatantId = stoneId,
+				targetCombatantIds = {},
+				queueIndex = 1,
+			},
+		}
+		Harness.expect(Validator.validateBattleCommand(command, context).ok)
+
+		context.combatantsById[stoneId].class = "Shade"
+		Harness.expect(
+			Harness.hasError(
+				Validator.validateBattleCommand(command, context),
+				"INVALID_CLASS_REFERENCE"
+			)
+		)
 	end)
 
 	Harness.test("invalid card definition", function()

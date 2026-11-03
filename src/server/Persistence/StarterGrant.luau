@@ -2,6 +2,15 @@
 
 local StarterGrant = {}
 
+local function requireGeneRegistry()
+	if script ~= nil then
+		return require(game:GetService("ReplicatedStorage").Shared.Genetics.GeneRegistry)
+	end
+	return require("../../shared/Genetics/GeneRegistry")
+end
+
+local GeneRegistry = requireGeneRegistry()
+
 local GRANT_VERSION = 1
 local STARTER_CLASSES = { "Stone", "Feral", "Verdant" }
 
@@ -21,23 +30,24 @@ local function prepare(userId: number, now: number, generateId, catalog)
 	for _, className in STARTER_CLASSES do
 		local definition = catalog.getByClass(className)
 		assert(definition ~= nil, `Missing starter definition {className}`)
+		local genomes = GeneRegistry.defaultGenomes(className)
+		assert(genomes ~= nil, `Missing starter genomes {className}`)
 		local id = `critter:{generateId()}`
 		table.insert(critters, {
-			schemaVersion = 1,
+			schemaVersion = 2,
 			id = id,
 			definitionId = definition.id,
 			ownerUserId = userId,
-			appearanceGenome = {
-				schemaVersion = 1,
-				speciesId = `starter.{string.lower(className)}`,
-				bodyVariantId = "placeholder",
-				paletteId = "starter",
-				patternId = "placeholder",
-			},
-			abilityGenome = { schemaVersion = 1, abilityIds = clone(definition.abilityIds) },
+			appearanceGenome = genomes.appearanceGenome,
+			abilityGenome = genomes.abilityGenome,
 			baseStats = clone(definition.baseStats),
 			acquisition = { source = "STARTER", acquiredAt = now, sourceVersion = GRANT_VERSION },
-			breeding = { breedable = false, generation = 0, parentIds = {} },
+			breeding = {
+				breedable = false,
+				generation = 0,
+				parentIds = {},
+				successfulBreedCount = 0,
+			},
 			tradable = false,
 			equipmentIds = {},
 		})

@@ -1,11 +1,11 @@
 # Critterbound
 
 Critterbound is a server-authoritative, 2.5D medieval-fantasy creature card battler for
-Roblox. Teams contain three Critters and eventually resolve secretly planned ability cards in
-Speed order. Run 6C adds app navigation, collection details, team building, inventory equipment, and
-menu-integrated Training Grounds on top of persistent Run 6B ownership. The server owns item creation,
-equipment, team validation, battle creation, persistence, revisions, and sanitized projections.
-Equipment combat effects remain intentionally disabled.
+Roblox. Teams contain three Critters and resolve secretly planned ability cards in Speed order.
+Persistent ownership includes genetics, breeding, eggs, deterministic acquisition pools, and Run
+7E.3 Training Victory contracts. The server owns battle outcomes, contract progress, rewards, item
+creation, genetics, team validation, persistence, revisions, and sanitized projections. Equipment
+combat effects remain disabled.
 
 ## Tooling
 
@@ -60,7 +60,7 @@ Linux, so source editing and Rojo builds work there but Studio execution needs a
 ## Validation
 
 ```sh
-stylua --check src
+stylua --check src tests
 selene src tests
 lune run tests/run
 rojo sourcemap default.project.json --output sourcemap.json

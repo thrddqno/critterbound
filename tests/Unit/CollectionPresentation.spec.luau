@@ -14,10 +14,17 @@ return function(Harness)
 					displayName = "Pebble",
 					class = "Stone",
 					baseStats = { maxHealth = 120, speed = 10, skill = 2, resolve = 6 },
-					appearanceGenome = { schemaVersion = 1, palette = "granite" },
-					abilityGenome = { abilityIds = { "stone.guard", "stone.slam" } },
+					resolvedAppearance = {
+						resolvedGenesBySlot = { color = "gene.appearance.color.stone.default" },
+					},
+					resolvedAbilityIds = { "stone.guard", "stone.slam" },
 					acquisition = { source = "STARTER" },
-					breeding = { breedable = false, generation = 0 },
+					breeding = {
+						breedable = false,
+						generation = 0,
+						parentIds = {},
+						successfulBreedCount = 0,
+					},
 					tradable = false,
 					selectedTeamSlot = 1,
 					equippedItem = { displayName = "Training Charm" },
@@ -29,6 +36,29 @@ return function(Harness)
 		Harness.equal(result.critters[1].equipmentText, "Training Charm")
 		Harness.equal(result.critters[1].breedingText, "Restricted")
 		Harness.equal(result.critters[1].selectedTeamSlot, 1)
-		Harness.expect(string.find(result.critters[1].appearanceText, "palette: granite") ~= nil)
+		Harness.expect(
+			string.find(result.critters[1].appearanceText, "Color: Stone Color", 1, true) ~= nil
+		)
+		Harness.expect(
+			string.find(result.critters[1].appearanceText, "gene.appearance", 1, true) == nil
+		)
+		Harness.expect(
+			string.find(result.critters[1].restrictionsText, "Breeding: Restricted", 1, true) ~= nil
+		)
+	end)
+
+	Harness.test("collection presentation uses curated gene display names", function()
+		Harness.equal(
+			Presentation.readableIdentifier("gene.appearance.eyes.stone.foreign_species"),
+			"Stone Crystal Eyes"
+		)
+		Harness.equal(
+			Presentation.readableIdentifier("gene.appearance.accessories.verdant.sprout"),
+			"Verdant Sprout"
+		)
+		Harness.equal(
+			Presentation.readableIdentifier("gene.appearance.color.stone.default"),
+			"Stone Color"
+		)
 	end)
 end

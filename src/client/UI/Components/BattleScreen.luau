@@ -27,6 +27,7 @@ export type Props = {
 	onExitToMenu: () -> (),
 	selectableTargetIds: { string },
 	activeCombatantIds: { string },
+	animationCommandsByCritterId: { [string]: any }?,
 	requestPending: boolean?,
 	message: string?,
 }
@@ -206,6 +207,7 @@ function BattleScreen.mount(parent: Instance, props: Props)
 			compact = compact,
 			selectableTargetIds = currentProps.selectableTargetIds,
 			activeCombatantIds = currentProps.activeCombatantIds,
+			animationCommandsByCritterId = currentProps.animationCommandsByCritterId,
 			onCritterSelected = currentProps.onCritterSelected,
 		})
 		queueHandle.update({

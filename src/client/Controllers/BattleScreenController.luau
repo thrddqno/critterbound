@@ -48,6 +48,8 @@ function BattleScreenController.start(playerGui: PlayerGui, battleRequest: Remot
 	local pendingCard: any = nil
 	local selectableTargetIds = {}
 	local activeCombatantIds = {}
+	local animationCommandsByCritterId = {}
+	local animationSequence = 0
 	local message: string? = nil
 	local networkPending = false
 	local playbackActive = false
@@ -164,6 +166,7 @@ function BattleScreenController.start(playerGui: PlayerGui, battleRequest: Remot
 					pendingCard = nil
 					selectableTargetIds = {}
 					activeCombatantIds = {}
+					animationCommandsByCritterId = {}
 					message = nil
 					updateScreen()
 				end)
@@ -175,6 +178,7 @@ function BattleScreenController.start(playerGui: PlayerGui, battleRequest: Remot
 			end,
 			selectableTargetIds = selectableTargetIds,
 			activeCombatantIds = activeCombatantIds,
+			animationCommandsByCritterId = animationCommandsByCritterId,
 			requestPending = networkPending or playbackActive,
 			message = message,
 		}
@@ -218,6 +222,7 @@ function BattleScreenController.start(playerGui: PlayerGui, battleRequest: Remot
 				return
 			end
 			activeCombatantIds = {}
+			animationCommandsByCritterId = {}
 			if playback.activeSourceCombatantId ~= nil then
 				table.insert(activeCombatantIds, playback.activeSourceCombatantId)
 			end
@@ -225,6 +230,26 @@ function BattleScreenController.start(playerGui: PlayerGui, battleRequest: Remot
 				table.insert(activeCombatantIds, id)
 			end
 			message = playback.message
+			local animationId = nil
+			local animationCritterId = nil
+			local payload = event.payload or {}
+			if event.kind == "CARD_PLAYED" then
+				animationId = "ATTACK"
+				animationCritterId = event.sourceCombatantId
+			elseif event.kind == "DAMAGE_APPLIED" then
+				animationId = "HIT"
+				animationCritterId = payload.targetCombatantId
+			elseif event.kind == "CRITTER_DEFEATED" then
+				animationId = "DEFEAT"
+				animationCritterId = payload.combatantId
+			end
+			if animationId ~= nil and animationCritterId ~= nil then
+				animationSequence += 1
+				animationCommandsByCritterId[animationCritterId] = {
+					id = animationId,
+					sequence = animationSequence,
+				}
+			end
 			updateScreen()
 			task.wait(0.18)
 		end

@@ -1,7 +1,7 @@
 # Data Models
 
-Run 6B adds inventory, equipment, and mutable selected teams while retaining Run 6A ownership and
-the combat contracts from earlier runs.
+Run 7A adds versioned genetic loci while retaining inventory, equipment, mutable teams, and battle
+contracts from earlier runs.
 
 ## Static definitions
 
@@ -39,8 +39,16 @@ and durations.
 `CritterInstance` contains owned identity, definition reference, owner user ID, and two independent
 genomes:
 
-- `AppearanceGenome`: species, body variant, palette, and pattern identifiers.
-- `AbilityGenome`: exactly four unique combat ability identifiers.
+- `AppearanceGenome` schema 2: `body`, `eyes`, `wings`, `tail`, `color`, `markings`, and
+  `accessories` loci.
+- `AbilityGenome` schema 2: `mouth`, `horn`, `back`, `tail`, and `traits` loci.
+
+Every locus contains exact `D`, `R1`, and `R2` logical gene IDs. Resolvers derive phenotype data;
+resolved output is not persisted. Appearance resolution returns body-rig family, logical base/layer
+IDs, ordering, anchor/pivot keys, and attachment keys. Ability resolution requires exactly four
+unique cards; native-class cards are always accepted, while cross-class cards require explicit gene
+compatibility plus class ability-pool membership. Neutral trait genes produce no card. Curated
+`founderGenomes` remain fixture/opponent data and never replace canonical starter genomes.
 
 Changing appearance data cannot modify ability data. Each owned Critter also snapshots base stats,
 acquisition metadata, tradability, breeding flags, and equipment ID references. Run 6A stores these
@@ -48,9 +56,37 @@ fields but implements no breeding, trading, equipment, inventory, or reward beha
 
 ## Player profile
 
-`PlayerProfile` schema version 2 stores `userId`, revision, creation/update timestamps,
+`PlayerProfile` schema version 6 stores `userId`, revision, creation/update timestamps,
 `starterGrantVersion`, `ownedCritters`, and an ordered `selectedTeam` of exactly three unique owned
-IDs. Progression remains an empty placeholder.
+IDs. Schema 6 retains the breeding operation receipts added by Run 7E.1 and the
+`acquisitionOperationsById` plus `acquisitionOperationOrder` for idempotent Run 7E.2 grants. Each
+acquisition receipt records the command ID, generated Critter ID, pool ID/version, seed, optional
+class, source, and grant metadata. Receipts cap at 128 while the acquisition service retains 64 by
+default. Progression remains an empty placeholder.
+
+Schema 6 adds contract state: ordered contract instances, reward entitlements, and durable
+redemptions. A `TRAINING_VICTORY` instance records definition ID/version, owner, `ACTIVE`, `COMPLETED`,
+or `CLAIMED` status, progress, acceptance/completion/claim timestamps, entitlement ID, baseline battle
+ID, and completed battle ID. Its entitlement stores the server seed and `COMMON_FOUNDERS` pool
+version. On claim, the awarded Critter stores the actual generated genomes; the entitlement and
+redemption store the immutable awarded Critter identity and class.
+
+Contract instances and entitlements cap at 128 and may prune claimed display history. Redemptions cap
+at 2048 and are never pruned; reaching that cap disables new acceptance. Thus retries after display
+history pruning still resolve to the original owned Critter without rerolling or duplicating it.
+
+Run 7E.2 acquisition is server-only. `CritterAcquisitionService.PreviewPool` and
+`GenerateCandidate` are structural/internal APIs; no client remote exposes generation or granting.
+`GrantCritter` requires a loaded, writable profile and an authorized server context, validates the
+pool, seed, class, and genomes, then applies exactly one atomic `ProfileService.UpdateProfile`
+mutation. The mutation re-checks the command ID and Critter ID, so a retry returns the existing
+Critter rather than creating a duplicate, and a save failure leaves no partial grant. Persisted
+`acquisition.source` is derived from the pool (`ACQUISITION.<POOL_ID>`), never from client input.
+
+Acquired Critters use `CritterInstanceFactory`: immutable server-generated ID, catalog class and
+base stats, valid appearance/ability genomes, generation `0`, empty equipment, no parents,
+`successfulBreedCount = 0`, `breedable = true`, and explicit `tradable = false`. Starter metadata is
+never reused and ownership is keyed by generated ID, not display name.
 
 Inventory schema version 2 contains:
 
@@ -62,6 +98,14 @@ Inventory schema version 2 contains:
 `ItemDefinition` is static registry data: display name, category, rarity, stack behavior, maximum
 stack, equipment slot, modifiers, and tradeability. Static definitions are never copied into profile
 records. Fixture categories are material, catalyst, consumable, equipment, and collectible.
+
+Migration `2 → 3` recognizes legacy starter tuples only, replaces only Critter schema/genome fields,
+and preserves IDs, owners, stats, equipment, inventory, selected-team order, and revision. Unknown
+legacy combinations fail closed without writing the DataStore record. Migration uses no RNG.
+Migration `4 → 5` only adds empty acquisition operation tables; existing breeding receipts, Critters,
+inventory, equipment, and team data are preserved.
+Migration `5 → 6` adds empty contract, entitlement, and redemption tables without changing existing
+Critters, eggs, breeding/acquisition receipts, inventory, equipment, or selected-team data.
 
 Each Critter supports zero or one equipment item. A unique equipment item stores
 `equippedCritterId`; the Critter stores the same item ID in `equipmentIds`. Validation requires both
@@ -160,6 +204,10 @@ Failure uses the standard `{ ok = false, errors = { DomainError } }` shape. The 
 deep copy. The input state and static definitions are never mutated.
 
 ## Network requests and snapshots
+
+`ContractRequest` supports `GET_CONTRACTS`, `ACCEPT_CONTRACT`, `GET_CONTRACT_PROGRESS`, and
+`CLAIM_CONTRACT_REWARD`. Mutations require command IDs and expected profile revisions. No request kind
+accepts completion evidence or reward-generation inputs.
 
 `BattleRequest` accepts `{ kind, ... }` tables. `COMMAND` carries a versioned
 `BattleCommandEnvelope`; restart carries an idempotent `requestId`. Responses use the same tagged

@@ -1,5 +1,7 @@
 --!strict
 
+local GeneRegistry = require("../../src/shared/Genetics/GeneRegistry")
+
 local Definitions = {
 	Stone = {
 		schemaVersion = 1,
@@ -7,7 +9,7 @@ local Definitions = {
 		displayName = "Bastion",
 		class = "Stone",
 		baseStats = { maxHealth = 120, attack = 20, defense = 35, speed = 10 },
-		abilityIds = { "stone.guard", "stone.riposte", "stone.bulwark", "stone.quake" },
+		abilityIds = { "stone.guard", "stone.bulwark", "stone.quake", "stone.slam" },
 	},
 	Feral = {
 		schemaVersion = 1,
@@ -15,7 +17,7 @@ local Definitions = {
 		displayName = "Ravager",
 		class = "Feral",
 		baseStats = { maxHealth = 80, attack = 42, defense = 12, speed = 30 },
-		abilityIds = { "feral.strike", "feral.pounce", "feral.rend", "feral.frenzy" },
+		abilityIds = { "feral.strike", "feral.pounce", "feral.frenzy", "feral.rend" },
 	},
 	Verdant = {
 		schemaVersion = 1,
@@ -23,59 +25,42 @@ local Definitions = {
 		displayName = "Bloom",
 		class = "Verdant",
 		baseStats = { maxHealth = 95, attack = 18, defense = 20, speed = 20 },
-		abilityIds = { "verdant.mend", "verdant.seed", "verdant.renew", "verdant.grove" },
+		abilityIds = { "verdant.mend", "verdant.renew", "verdant.grove", "verdant.seed" },
 	},
 }
 
 local Instances = {
 	Stone = {
-		schemaVersion = 1,
+		schemaVersion = 2,
 		id = "owned.stone.1",
 		definitionId = Definitions.Stone.id,
 		ownerUserId = 101,
-		appearanceGenome = {
-			schemaVersion = 1,
-			speciesId = "stoneback",
-			bodyVariantId = "broad",
-			paletteId = "granite",
-			patternId = "mossy",
-		},
-		abilityGenome = { schemaVersion = 1, abilityIds = Definitions.Stone.abilityIds },
+		appearanceGenome = GeneRegistry.defaultGenomes("Stone").appearanceGenome,
+		abilityGenome = GeneRegistry.defaultGenomes("Stone").abilityGenome,
 	},
 	Feral = {
-		schemaVersion = 1,
+		schemaVersion = 2,
 		id = "owned.feral.1",
 		definitionId = Definitions.Feral.id,
 		ownerUserId = 101,
-		appearanceGenome = {
-			schemaVersion = 1,
-			speciesId = "fangcat",
-			bodyVariantId = "lean",
-			paletteId = "ember",
-			patternId = "striped",
-		},
-		abilityGenome = { schemaVersion = 1, abilityIds = Definitions.Feral.abilityIds },
+		appearanceGenome = GeneRegistry.defaultGenomes("Feral").appearanceGenome,
+		abilityGenome = GeneRegistry.defaultGenomes("Feral").abilityGenome,
 	},
 	Verdant = {
-		schemaVersion = 1,
+		schemaVersion = 2,
 		id = "owned.verdant.1",
 		definitionId = Definitions.Verdant.id,
 		ownerUserId = 101,
-		appearanceGenome = {
-			schemaVersion = 1,
-			speciesId = "sprigfox",
-			bodyVariantId = "round",
-			paletteId = "spring",
-			patternId = "leafmask",
-		},
-		abilityGenome = { schemaVersion = 1, abilityIds = Definitions.Verdant.abilityIds },
+		appearanceGenome = GeneRegistry.defaultGenomes("Verdant").appearanceGenome,
+		abilityGenome = GeneRegistry.defaultGenomes("Verdant").abilityGenome,
 	},
 }
 
 for className, instance in Instances do
 	instance.baseStats = Definitions[className].baseStats
 	instance.acquisition = { source = "FIXTURE", acquiredAt = 1, sourceVersion = 1 }
-	instance.breeding = { breedable = false, generation = 0, parentIds = {} }
+	instance.breeding =
+		{ breedable = false, generation = 0, parentIds = {}, successfulBreedCount = 0 }
 	instance.tradable = false
 	instance.equipmentIds = {}
 end

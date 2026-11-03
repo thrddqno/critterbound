@@ -39,7 +39,16 @@ function CollectionScreen.mount(parent: Instance, props)
 	detailPadding.PaddingBottom = UDim.new(0, 12)
 	detailPadding.Parent = detailHost
 	local connections = { back.Activated:Connect(props.onBack) }
-	local selected = props.collection.critters[1]
+	local selected = nil
+	if props.selectedCritterId ~= nil then
+		for _, critter in props.collection.critters do
+			if critter.id == props.selectedCritterId then
+				selected = critter
+				break
+			end
+		end
+	end
+	selected = selected or props.collection.critters[1]
 	local detail = nil
 	local empty = UIFactory.label(detailHost, "Collection is empty.", 18)
 	empty.Size = UDim2.fromScale(1, 1)

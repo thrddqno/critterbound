@@ -66,6 +66,73 @@ local function new(dependencies)
 	local lifecycleReceipts = {}
 	local service = {}
 
+	local function currentTime(): number
+		if deps.now ~= nil then
+			return math.floor(deps.now())
+		end
+		return os.time()
+	end
+
+	local function completionEvidence(session, userId: number)
+		return {
+			context = { kind = "SERVER", source = "BATTLE_SERVICE" },
+			userId = userId,
+			mode = "TRAINING",
+			battleId = session.state.id,
+			playerTeamId = session.playerTeamId,
+			outcome = clone(session.matchOutcome),
+			startedAt = session.startedAt,
+			completedAt = session.completedAt,
+		}
+	end
+
+	local function deliverCompletion(session, userId: number)
+		if session.completionDelivered then
+			return true, nil
+		end
+		if session.matchOutcome == nil then
+			return true, nil
+		end
+		if deps.onBattleCompleted == nil then
+			session.completionDelivered = true
+			session.pendingCompletion = nil
+			return true, nil
+		end
+		if session.pendingCompletion == nil then
+			session.pendingCompletion = completionEvidence(session, userId)
+		end
+		local ok, result = pcall(deps.onBattleCompleted, clone(session.pendingCompletion))
+		if not ok then
+			return false, "CONTRACT_COMPLETION_ERROR"
+		end
+		if type(result) ~= "table" or result.ok ~= true then
+			return false,
+				if type(result) == "table"
+						and result.errors
+						and result.errors[1]
+					then result.errors[1].code
+					else "CONTRACT_COMPLETION_ERROR"
+		end
+		session.completionDelivered = true
+		session.pendingCompletion = nil
+		return true, nil
+	end
+
+	local function flushPendingCompletion(userId: number)
+		local session = sessions[userId]
+		if session == nil or session.pendingCompletion == nil then
+			return true, nil
+		end
+		return deliverCompletion(session, userId)
+	end
+
+	local function completionPendingFailure(code: string?)
+		return failure(
+			"COMPLETION_PENDING",
+			`Battle victory is not durable yet ({code or "PENDING"})`
+		)
+	end
+
 	local function projectionContext(session)
 		return {
 			cardDefinitionsById = session.context.cardDefinitionsById,
@@ -114,6 +181,10 @@ local function new(dependencies)
 			aiOwnerUserId = input.aiOwnerUserId,
 			protocolVersion = deps.protocolVersion,
 			generation = generation,
+			startedAt = currentTime(),
+			completedAt = nil,
+			completionDelivered = false,
+			pendingCompletion = nil,
 			latestInitiativeCombatantIds = {},
 			matchOutcome = nil,
 			resolving = false,
@@ -123,6 +194,10 @@ local function new(dependencies)
 	end
 
 	local function startBattle(userId: number)
+		local flushed, flushCode = flushPendingCompletion(userId)
+		if not flushed then
+			return completionPendingFailure(flushCode)
+		end
 		local session = sessions[userId]
 		if session == nil then
 			local created = createSession(userId)
@@ -141,6 +216,10 @@ local function new(dependencies)
 	local function restartBattle(userId: number, requestId: string)
 		if type(requestId) ~= "string" or requestId == "" then
 			return failure("INVALID_REQUEST_ID", "Restart request ID is required")
+		end
+		local flushed, flushCode = flushPendingCompletion(userId)
+		if not flushed then
+			return completionPendingFailure(flushCode)
 		end
 		local receipts = lifecycleReceipts[userId] or {}
 		lifecycleReceipts[userId] = receipts
@@ -161,6 +240,10 @@ local function new(dependencies)
 	end
 
 	local function requestSnapshot(userId: number)
+		local flushed, flushCode = flushPendingCompletion(userId)
+		if not flushed then
+			return completionPendingFailure(flushCode)
+		end
 		local session = sessions[userId]
 		if session == nil then
 			return failure("NO_ACTIVE_BATTLE", "Player has no active battle")
@@ -233,6 +316,13 @@ local function new(dependencies)
 		session.state = resolved.value.state
 		session.latestInitiativeCombatantIds = extractInitiative(resolved.value.events)
 		session.matchOutcome = resolved.value.matchOutcome
+		if session.matchOutcome ~= nil and session.completedAt == nil then
+			session.completedAt = currentTime()
+			local delivered, deliveryCode = deliverCompletion(session, userId)
+			if not delivered then
+				return completionPendingFailure(deliveryCode)
+			end
+		end
 		local finalProjection = project(session, userId)
 		if not finalProjection.ok then
 			return finalProjection
@@ -250,6 +340,10 @@ local function new(dependencies)
 	end
 
 	local function processCommand(userId: number, envelope)
+		local flushed, flushCode = flushPendingCompletion(userId)
+		if not flushed then
+			return completionPendingFailure(flushCode)
+		end
 		local session = sessions[userId]
 		if session == nil then
 			return failure("NO_ACTIVE_BATTLE", "Player has no active battle")
@@ -322,12 +416,26 @@ local function new(dependencies)
 	end
 
 	function service.removePlayer(userId: number)
+		flushPendingCompletion(userId)
 		sessions[userId] = nil
 		lifecycleReceipts[userId] = nil
 	end
 
 	function service.invalidateBattle(userId: number)
 		sessions[userId] = nil
+	end
+
+	function service.getActiveBattleId(userId: number): string?
+		local session = sessions[userId]
+		if session == nil then
+			return nil
+		end
+		return session.state.id
+	end
+
+	function service.hasPendingCompletion(userId: number): boolean
+		local session = sessions[userId]
+		return session ~= nil and session.pendingCompletion ~= nil
 	end
 
 	service.startBattle = startBattle

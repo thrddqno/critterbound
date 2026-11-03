@@ -26,6 +26,15 @@ local definitionsByClass = {
 			resolve = 6,
 		},
 		abilityIds = { "stone.guard", "stone.bulwark", "stone.quake", "stone.slam" },
+		abilityPool = {
+			"stone.guard",
+			"stone.bulwark",
+			"stone.quake",
+			"stone.slam",
+			"stone.rampart",
+			"stone.crush",
+			"verdant.bloom",
+		},
 	},
 	Feral = {
 		schemaVersion = 1,
@@ -41,6 +50,15 @@ local definitionsByClass = {
 			resolve = 2,
 		},
 		abilityIds = { "feral.strike", "feral.pounce", "feral.frenzy", "feral.rend" },
+		abilityPool = {
+			"feral.strike",
+			"feral.pounce",
+			"feral.frenzy",
+			"feral.rend",
+			"feral.maul",
+			"feral.fury",
+			"gale.tailwind",
+		},
 	},
 	Verdant = {
 		schemaVersion = 1,
@@ -56,6 +74,14 @@ local definitionsByClass = {
 			resolve = 5,
 		},
 		abilityIds = { "verdant.mend", "verdant.renew", "verdant.grove", "verdant.seed" },
+		abilityPool = {
+			"verdant.mend",
+			"verdant.renew",
+			"verdant.grove",
+			"verdant.seed",
+			"verdant.bloom",
+			"verdant.bramble",
+		},
 	},
 	Tide = {
 		schemaVersion = 1,
@@ -71,6 +97,15 @@ local definitionsByClass = {
 			resolve = 5,
 		},
 		abilityIds = { "tide.mend", "tide.renew", "tide.barrier", "tide.surge" },
+		abilityPool = {
+			"tide.mend",
+			"tide.renew",
+			"tide.barrier",
+			"tide.surge",
+			"tide.torrent",
+			"tide.purge",
+			"verdant.bloom",
+		},
 	},
 	Gale = {
 		schemaVersion = 1,
@@ -86,6 +121,14 @@ local definitionsByClass = {
 			resolve = 3,
 		},
 		abilityIds = { "gale.ward", "gale.shelter", "gale.gust", "gale.haste" },
+		abilityPool = {
+			"gale.ward",
+			"gale.shelter",
+			"gale.gust",
+			"gale.haste",
+			"gale.squall",
+			"gale.tailwind",
+		},
 	},
 	Shade = {
 		schemaVersion = 1,
@@ -101,6 +144,14 @@ local definitionsByClass = {
 			resolve = 4,
 		},
 		abilityIds = { "shade.bite", "shade.toxin", "shade.weaken", "shade.storm" },
+		abilityPool = {
+			"shade.bite",
+			"shade.toxin",
+			"shade.weaken",
+			"shade.storm",
+			"shade.curse",
+			"shade.terror",
+		},
 	},
 }
 

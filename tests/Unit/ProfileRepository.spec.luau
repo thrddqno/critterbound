@@ -133,11 +133,27 @@ return function(Harness)
 		local record = store.get("player:506")
 		record.profile.schemaVersion = 1
 		record.profile.inventory = { schemaVersion = 1, itemsById = {} }
+		for _, instance in record.profile.ownedCritters do
+			local definition = Fixtures.Catalog.getById(instance.definitionId)
+			instance.schemaVersion = 1
+			instance.appearanceGenome = {
+				schemaVersion = 1,
+				speciesId = `starter.{string.lower(definition.class)}`,
+				bodyVariantId = "placeholder",
+				paletteId = "starter",
+				patternId = "placeholder",
+			}
+			instance.abilityGenome = {
+				schemaVersion = 1,
+				abilityIds = table.clone(definition.abilityIds),
+			}
+		end
 		store.set("player:506", record)
 		local migrated = Fixtures.newRepository(store, "migration-target").load(506)
 		Harness.expect(migrated.ok)
-		Harness.equal(migrated.value.profile.schemaVersion, 2)
+		Harness.equal(migrated.value.profile.schemaVersion, 7)
 		Harness.equal(migrated.value.profile.inventory.schemaVersion, 2)
+		Harness.equal(migrated.value.profile.contracts.schemaVersion, 2)
 		Harness.deepEqual(ids(migrated.value.profile), originalIds)
 	end)
 end

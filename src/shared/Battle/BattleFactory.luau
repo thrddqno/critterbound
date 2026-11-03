@@ -2,6 +2,16 @@
 
 local BattleFactory = {}
 
+local function requireGenetics(name: string)
+	if script ~= nil then
+		return require(script.Parent.Parent.Genetics[name])
+	end
+	return require(`../Genetics/{name}`)
+end
+
+local AbilityResolver = requireGenetics("AbilityResolver")
+local AppearanceResolver = requireGenetics("AppearanceResolver")
+
 local VALID_CLASSES =
 	{ Verdant = true, Tide = true, Feral = true, Gale = true, Shade = true, Stone = true }
 local VALID_TARGETS = {
@@ -84,7 +94,7 @@ local function create(input, dependencies)
 		if not validation.ok then
 			return validation
 		end
-		for _, abilityId in definition.abilityIds do
+		for _, abilityId in definition.abilityPool or definition.abilityIds do
 			validAbilityIds[abilityId] = true
 		end
 	end
@@ -200,21 +210,27 @@ local function create(input, dependencies)
 					instance.definitionId
 				)
 			end
-			local abilities = instance.abilityGenome and instance.abilityGenome.abilityIds
-			if arrayLength(abilities) ~= 4 then
-				return failure(
-					"INVALID_ABILITY_COUNT",
-					"Critter requires four abilities",
-					`teams[{teamIndex}].critterInstances[{slot}].abilityGenome`
-				)
+			local appearanceResolution =
+				AppearanceResolver.resolve(instance.appearanceGenome, critterDefinition.class)
+			if not appearanceResolution.ok then
+				return appearanceResolution
 			end
+			local abilityResolution = AbilityResolver.resolve(
+				instance.abilityGenome,
+				critterDefinition.class,
+				appearanceResolution.value.speciesId
+			)
+			if not abilityResolution.ok then
+				return abilityResolution
+			end
+			local abilities = abilityResolution.value.abilityIds
 			local seenAbilities = {}
 			for abilityIndex, abilityId in abilities do
 				if seenAbilities[abilityId] then
 					return failure(
 						"DUPLICATE_ABILITY_ID",
 						"Critter abilities must be unique",
-						`teams[{teamIndex}].critterInstances[{slot}].abilityGenome.abilityIds[{abilityIndex}]`
+						`teams[{teamIndex}].critterInstances[{slot}].abilityGenome.slots`
 					)
 				end
 				seenAbilities[abilityId] = true
@@ -234,10 +250,14 @@ local function create(input, dependencies)
 					)
 				end
 				local cardDefinition = matching[1]
-				if cardDefinition.class ~= critterDefinition.class then
+				if
+					cardDefinition.class ~= critterDefinition.class
+					and AbilityResolver.cardClassFor(abilityId, critterDefinition.class)
+						~= cardDefinition.class
+				then
 					return failure(
 						"INVALID_CLASS_REFERENCE",
-						"Card class must match source Critter",
+						"Card class is not expressible by source Critter",
 						abilityId
 					)
 				end

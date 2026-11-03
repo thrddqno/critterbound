@@ -22,3 +22,15 @@ Run 6B profile schema 2 migrates the empty Run 6A inventory placeholder into sta
 item records, and bounded idempotent grant receipts. The DataStore name remains unchanged so existing
 profiles migrate in place. Corrupt non-empty schema-1 placeholders fail migration rather than being
 discarded.
+
+Run 7A profile schema 3 migrates recognized schema-1 starter genomes into named schema-2 allele
+triplets. Migration clones records and changes only profile/Critter/genome schema fields. Unknown
+legacy appearance or ability combinations fail before `UpdateAsync` writes, preventing invented or
+random genes on load.
+
+Run 7E.2 schema 5 adds bounded acquisition operation receipts. Run 7E.3 schema 6 adds contract
+instances, reward entitlements, and a separate durable redemption ledger. Claimed display history may
+be pruned, but redemptions are retained for lifetime-safe claim retries; acceptance fails closed when
+the 2048-record redemption capacity is reached. Contract completion and reward claim each commit via
+one validated `ProfileService.UpdateProfile` write, so failed saves do not expose partial progress or
+ownership.

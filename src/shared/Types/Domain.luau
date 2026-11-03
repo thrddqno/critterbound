@@ -30,6 +30,7 @@ export type CritterDefinition = {
 	class: CritterClass,
 	baseStats: CritterStats,
 	abilityIds: { string },
+	abilityPool: { string }?,
 }
 
 export type CardEffectKind = "DAMAGE" | "HEAL" | "SHIELD" | "STATUS"
@@ -56,17 +57,30 @@ export type CardDefinition = {
 
 -- Persistent creature data: owned identity and independently inherited genomes.
 
+export type GeneTriplet = { D: string, R1: string, R2: string }
+
 export type AppearanceGenome = {
 	schemaVersion: number,
-	speciesId: string,
-	bodyVariantId: string,
-	paletteId: string,
-	patternId: string,
+	slots: {
+		body: GeneTriplet,
+		eyes: GeneTriplet,
+		wings: GeneTriplet,
+		tail: GeneTriplet,
+		color: GeneTriplet,
+		markings: GeneTriplet,
+		accessories: GeneTriplet,
+	},
 }
 
 export type AbilityGenome = {
 	schemaVersion: number,
-	abilityIds: { string },
+	slots: {
+		mouth: GeneTriplet,
+		horn: GeneTriplet,
+		back: GeneTriplet,
+		tail: GeneTriplet,
+		traits: GeneTriplet,
+	},
 }
 
 export type CritterInstance = {
@@ -86,6 +100,7 @@ export type CritterInstance = {
 		breedable: boolean,
 		generation: number,
 		parentIds: { string },
+		successfulBreedCount: number,
 	},
 	tradable: boolean,
 	equipmentIds: { string },
@@ -301,6 +316,11 @@ export type PlayerProfile = {
 	starterGrantVersion: number,
 	ownedCritters: { [string]: CritterInstance },
 	selectedTeam: { string },
+	eggs: { [string]: EggInstance },
+	breedingOperationsById: { [string]: BreedingOperationRecord },
+	breedingOperationOrder: { string },
+	acquisitionOperationsById: { [string]: AcquisitionOperationRecord },
+	acquisitionOperationOrder: { string },
 	inventory: {
 		schemaVersion: number,
 		stacksByDefinitionId: { [string]: number },
@@ -315,9 +335,48 @@ export type PlayerProfile = {
 	},
 }
 
-export type TradeRecord = {
-	id: string,
+export type EggInstance = {
 	schemaVersion: number,
+	eggId: string,
+	ownerUserId: number,
+	parentAId: string,
+	parentBId: string,
+	offspringClass: CritterClass,
+	offspringAppearanceGenome: AppearanceGenome,
+	offspringAbilityGenome: AbilityGenome,
+	generation: number,
+	createdAt: number,
+	hatchAt: number,
+	status: "INCUBATING" | "READY" | "HATCHED",
+	breedingCommandId: string,
+	hatchedAt: number?,
+	hatchOperationId: string?,
+	hatchedCommandId: string?,
+	offspringId: string?,
+}
+
+export type BreedingOperationRecord = {
+	schemaVersion: number,
+	commandId: string,
+	parentAId: string,
+	parentBId: string,
+	eggId: string,
+	createdAt: number,
+}
+
+export type AcquisitionOperationRecord = {
+	schemaVersion: number,
+	commandId: string,
+	grantId: string,
+	critterId: string,
+	poolId: string,
+	poolVersion: number,
+	configVersion: number,
+	source: string,
+	grantedBy: string,
+	class: CritterClass,
+	seed: number,
+	createdAt: number,
 }
 
 return table.freeze({})

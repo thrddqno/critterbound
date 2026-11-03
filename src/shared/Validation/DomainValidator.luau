@@ -30,6 +30,16 @@ end
 
 local TargetingRules = requireDefinition("TargetingRules")
 
+local function requireGenetics(name: string)
+	if script ~= nil then
+		return require((script.Parent.Parent.Genetics :: any)[name])
+	end
+	return require(`../Genetics/{name}`)
+end
+
+local GenomeValidator = requireGenetics("GenomeValidator")
+local AbilityResolver = requireGenetics("AbilityResolver")
+
 export type BattleValidationContext = {
 	team: AnyRecord,
 	combatantsById: RecordsById,
@@ -241,49 +251,87 @@ local function validateAbilityIds(
 	end
 end
 
-local function validateAppearanceGenome(value: unknown): ValidationResult
-	local errors: { DomainError } = {}
-	if type(value) ~= "table" then
-		addError(errors, "INVALID_APPEARANCE_GENOME", "Expected appearance genome table", nil)
-		return finish(errors)
+local function validateAbilityPool(errors: { DomainError }, value: unknown, path: string)
+	if value == nil then
+		return
 	end
 
-	local genome = value :: { [any]: any }
-	if genome.schemaVersion ~= 1 then
+	local length = getArrayLength(value)
+	if length == nil then
+		addError(errors, "INVALID_ABILITY_POOL", "Expected dense ability identifier array", path)
+		return
+	end
+	if length < 4 then
 		addError(
 			errors,
-			"UNSUPPORTED_SCHEMA",
-			"Appearance genome schemaVersion must be 1",
-			"schemaVersion"
+			"INVALID_ABILITY_POOL",
+			"Ability pool must include every base ability",
+			path
 		)
 	end
 
-	for _, field in { "speciesId", "bodyVariantId", "paletteId", "patternId" } do
-		validateIdentifier(errors, genome[field], field, "INVALID_APPEARANCE_TRAIT")
+	local seen: { [string]: boolean } = {}
+	for index, abilityId in value :: { any } do
+		validateIdentifier(errors, abilityId, `{path}[{index}]`, "INVALID_ABILITY_ID")
+		if type(abilityId) == "string" then
+			if seen[abilityId] then
+				addError(
+					errors,
+					"DUPLICATE_ABILITY_ID",
+					"Ability identifiers must be unique",
+					`{path}[{index}]`
+				)
+			end
+			seen[abilityId] = true
+		end
 	end
-
-	return finish(errors)
 end
 
-local function validateAbilityGenome(value: unknown): ValidationResult
-	local errors: { DomainError } = {}
-	if type(value) ~= "table" then
-		addError(errors, "INVALID_ABILITY_GENOME", "Expected ability genome table", nil)
-		return finish(errors)
+local function validateAbilityPoolBase(
+	errors: { DomainError },
+	abilityIds: unknown,
+	abilityPool: unknown
+)
+	if abilityPool == nil or type(abilityIds) ~= "table" then
+		return
 	end
 
-	local genome = value :: { [any]: any }
-	if genome.schemaVersion ~= 1 then
-		addError(
-			errors,
-			"UNSUPPORTED_SCHEMA",
-			"Ability genome schemaVersion must be 1",
-			"schemaVersion"
-		)
+	local pool: { [string]: boolean } = {}
+	for _, abilityId in abilityPool :: { any } do
+		if type(abilityId) == "string" then
+			pool[abilityId] = true
+		end
 	end
-	validateAbilityIds(errors, genome.abilityIds, "abilityIds", true)
+	for index, abilityId in abilityIds :: { any } do
+		if type(abilityId) == "string" and not pool[abilityId] then
+			addError(
+				errors,
+				"ABILITY_POOL_MISSING_BASE",
+				"Ability pool must include base ability",
+				`abilityIds[{index}]`
+			)
+		end
+	end
+end
 
-	return finish(errors)
+local function validateAppearanceGenome(value: unknown, className: string?): ValidationResult
+	if className == nil then
+		return {
+			ok = false,
+			errors = { { code = "MISSING_GENOME_CLASS", message = "Critter class is required" } },
+		}
+	end
+	return GenomeValidator.validateAppearance(value, className)
+end
+
+local function validateAbilityGenome(value: unknown, className: string?): ValidationResult
+	if className == nil then
+		return {
+			ok = false,
+			errors = { { code = "MISSING_GENOME_CLASS", message = "Critter class is required" } },
+		}
+	end
+	return GenomeValidator.validateAbility(value, className)
 end
 
 local function appendNestedErrors(errors: { DomainError }, result: ValidationResult, prefix: string)
@@ -292,8 +340,10 @@ local function appendNestedErrors(errors: { DomainError }, result: ValidationRes
 	end
 
 	for _, nestedError in result.errors do
-		local path = prefix
-		if nestedError.path ~= nil then
+		local path = if prefix == "" then nil else prefix
+		if prefix == "" then
+			path = nestedError.path
+		elseif nestedError.path ~= nil then
 			path = `{prefix}.{nestedError.path}`
 		end
 		addError(errors, nestedError.code, nestedError.message, path)
@@ -334,6 +384,8 @@ local function validateCritterDefinition(value: unknown): ValidationResult
 	end
 	validateStats(errors, definition.baseStats, "baseStats")
 	validateAbilityIds(errors, definition.abilityIds, "abilityIds", true)
+	validateAbilityPool(errors, definition.abilityPool, "abilityPool")
+	validateAbilityPoolBase(errors, definition.abilityIds, definition.abilityPool)
 
 	return finish(errors)
 end
@@ -341,7 +393,7 @@ end
 local function validateCritterInstance(
 	value: unknown,
 	definitionsById: RecordsById?,
-	validAbilityIds: { [string]: boolean }?
+	_validAbilityIds: { [string]: boolean }?
 ): ValidationResult
 	local errors: { DomainError } = {}
 	if type(value) ~= "table" then
@@ -350,11 +402,11 @@ local function validateCritterInstance(
 	end
 
 	local instance = value :: { [any]: any }
-	if instance.schemaVersion ~= 1 then
+	if instance.schemaVersion ~= 2 then
 		addError(
 			errors,
 			"UNSUPPORTED_SCHEMA",
-			"CritterInstance schemaVersion must be 1",
+			"CritterInstance schemaVersion must be 2",
 			"schemaVersion"
 		)
 	end
@@ -369,12 +421,28 @@ local function validateCritterInstance(
 		addError(errors, "INVALID_OWNER", "ownerUserId must be a positive integer", "ownerUserId")
 	end
 
-	appendNestedErrors(
-		errors,
-		validateAppearanceGenome(instance.appearanceGenome),
-		"appearanceGenome"
-	)
-	appendNestedErrors(errors, validateAbilityGenome(instance.abilityGenome), "abilityGenome")
+	local definition = if definitionsById == nil
+		then nil
+		else definitionsById[instance.definitionId]
+	local className = if definition == nil then nil else definition.class
+	if className == nil then
+		appendNestedErrors(
+			errors,
+			validateAppearanceGenome(instance.appearanceGenome, className),
+			"appearanceGenome"
+		)
+		appendNestedErrors(
+			errors,
+			validateAbilityGenome(instance.abilityGenome, className),
+			"abilityGenome"
+		)
+	else
+		appendNestedErrors(
+			errors,
+			GenomeValidator.validate(instance.appearanceGenome, instance.abilityGenome, className),
+			""
+		)
+	end
 	validateStats(errors, instance.baseStats, "baseStats")
 
 	local acquisition = instance.acquisition
@@ -400,6 +468,7 @@ local function validateCritterInstance(
 		type(breeding) ~= "table"
 		or type(breeding.breedable) ~= "boolean"
 		or not isNonNegativeInteger(breeding.generation)
+		or not isNonNegativeInteger(breeding.successfulBreedCount)
 		or parentCount == nil
 		or parentCount > 2
 	then
@@ -447,22 +516,6 @@ local function validateCritterInstance(
 			"Critter definition does not exist",
 			"definitionId"
 		)
-	end
-
-	if validAbilityIds ~= nil and type(instance.abilityGenome) == "table" then
-		local abilityIds = instance.abilityGenome.abilityIds
-		if getArrayLength(abilityIds) ~= nil then
-			for index, abilityId in abilityIds do
-				if type(abilityId) == "string" and not validAbilityIds[abilityId] then
-					addError(
-						errors,
-						"UNKNOWN_ABILITY",
-						"Ability definition does not exist",
-						`abilityGenome.abilityIds[{index}]`
-					)
-				end
-			end
-		end
 	end
 
 	return finish(errors)
@@ -894,11 +947,15 @@ local function validateBattleCommand(
 			)
 			continue
 		end
-		if cardDefinition.class ~= sourceCombatant.class then
+		if
+			cardDefinition.class ~= sourceCombatant.class
+			and AbilityResolver.cardClassFor(cardDefinition.abilityId, sourceCombatant.class)
+				~= cardDefinition.class
+		then
 			addError(
 				errors,
 				"INVALID_CLASS_REFERENCE",
-				"Card class does not match source Critter",
+				"Card class is not expressible by source Critter",
 				`{path}.cardInstanceId`
 			)
 		end

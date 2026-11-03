@@ -12,6 +12,9 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local DevelopmentLogger = require(Shared.DevelopmentLogger)
 local Protocol = require(Shared.Network.Protocol)
 local PlayerDataProtocol = require(Shared.Network.PlayerDataProtocol)
+local BreedingProtocol = require(Shared.Network.BreedingProtocol)
+local EggProtocol = require(Shared.Network.EggProtocol)
+local ContractProtocol = require(Shared.Network.ContractProtocol)
 local TrainingGrounds = require(Shared.Definitions.TrainingGrounds)
 local CritterCatalog = require(Shared.Definitions.CritterCatalog)
 local ItemRegistry = require(Shared.Items.ItemRegistry)
@@ -25,14 +28,32 @@ local Deck = require(Shared.Battle.Deck)
 local RoundEconomy = require(Shared.Battle.RoundEconomy)
 local StatusEffects = require(Shared.Battle.StatusEffects)
 local DomainValidator = require(Shared.Validation.DomainValidator)
-
 local Server = script.Parent
+local GenomeValidator = require(Shared.Genetics.GenomeValidator)
+local InheritanceEngine = require(Server.Genetics.InheritanceEngine)
+local BreedingValidator = require(Server.Services.BreedingValidator)
+
+local function clone(value)
+	if type(value) ~= "table" then
+		return value
+	end
+	local result = {}
+	for key, child in value do
+		result[clone(key)] = clone(child)
+	end
+	return result
+end
 local BattleService = require(Server.Services.BattleService)
 local ProfileService = require(Server.Services.ProfileService)
 local TrainingBattleInputAdapter = require(Server.Services.TrainingBattleInputAdapter)
 local InventoryService = require(Server.Services.InventoryService)
 local EquipmentService = require(Server.Services.EquipmentService)
 local TeamService = require(Server.Services.TeamService)
+local BreedingService = require(Server.Services.BreedingService)
+local EggService = require(Server.Services.EggService)
+local CritterAcquisitionService = require(Server.Services.CritterAcquisitionService)
+local ContractService = require(Server.Services.ContractService)
+local CritterInstanceFactory = require(Server.Persistence.CritterInstanceFactory)
 local PlayerDataService = require(Server.Services.PlayerDataService)
 local BattleCommandProcessor = require(Server.Services.BattleCommandProcessor)
 local BattleProjector = require(Server.Services.BattleProjector)
@@ -43,6 +64,8 @@ local StarterGrant = require(Server.Persistence.StarterGrant)
 local ProfileRepository = require(Server.Persistence.ProfileRepository)
 local ProfileProjector = require(Server.Persistence.ProfileProjector)
 local DevelopmentConfig = require(Server.Config.DevelopmentConfig)
+local StudioAcquisitionFixtures = require(Server.Config.StudioAcquisitionFixtures)
+local GeneRegistry = require(Shared.Genetics.GeneRegistry)
 
 local storeOk, storeOrError = pcall(function()
 	return DataStoreService:GetDataStore("CritterboundPlayerProfiles_v1")
@@ -112,6 +135,44 @@ local teamService = TeamService.new({
 	catalog = CritterCatalog,
 })
 
+local eggService = EggService.new({
+	protocolVersion = EggProtocol.Version,
+	profileService = profileService,
+	catalog = CritterCatalog,
+	projector = ProfileProjector,
+	genomeValidator = GenomeValidator,
+	generateId = function()
+		return HttpService:GenerateGUID(false)
+	end,
+	now = os.time,
+})
+
+local breedingService = BreedingService.new({
+	protocolVersion = BreedingProtocol.Version,
+	profileService = profileService,
+	validator = BreedingValidator,
+	catalog = CritterCatalog,
+	genomeValidator = GenomeValidator,
+	inheritanceEngine = InheritanceEngine,
+	rng = DeterministicRng,
+	rngSeed = function()
+		return math.floor(os.clock() * 1000000) % 2147483646 + 1
+	end,
+	generateId = function()
+		return HttpService:GenerateGUID(false)
+	end,
+	now = os.time,
+	incubationSeconds = BreedingProtocol.IncubationSeconds,
+})
+
+local acquisitionService = CritterAcquisitionService.new({
+	profileService = profileService,
+	generateId = function()
+		return HttpService:GenerateGUID(false)
+	end,
+	now = os.time,
+})
+
 local remotes = ReplicatedStorage:FindFirstChild(Protocol.RemoteFolderName)
 if remotes == nil then
 	remotes = Instance.new("Folder")
@@ -133,6 +194,28 @@ if playerDataRequest == nil then
 	playerDataRequest.Parent = remotes
 end
 
+local breedingRequest = remotes:FindFirstChild(BreedingProtocol.RemoteName)
+if breedingRequest == nil then
+	breedingRequest = Instance.new("RemoteFunction")
+	breedingRequest.Name = BreedingProtocol.RemoteName
+	breedingRequest.Parent = remotes
+end
+
+local eggRequest = remotes:FindFirstChild(EggProtocol.RemoteName)
+if eggRequest == nil then
+	eggRequest = Instance.new("RemoteFunction")
+	eggRequest.Name = EggProtocol.RemoteName
+	eggRequest.Parent = remotes
+end
+
+local contractRequest = remotes:FindFirstChild(ContractProtocol.RemoteName)
+if contractRequest == nil then
+	contractRequest = Instance.new("RemoteFunction")
+	contractRequest.Name = ContractProtocol.RemoteName
+	contractRequest.Parent = remotes
+end
+
+local contractService
 local battleService = BattleService.new({
 	protocolVersion = Protocol.Version,
 	content = TrainingGrounds,
@@ -149,6 +232,36 @@ local battleService = BattleService.new({
 	statusEffects = StatusEffects,
 	validator = DomainValidator,
 	drawPerRound = 3,
+	now = os.time,
+	onBattleCompleted = function(evidence)
+		if contractService == nil then
+			return {
+				ok = false,
+				errors = {
+					{
+						code = "CONTRACT_SERVICE_UNAVAILABLE",
+						message = "Contract service is unavailable",
+					},
+				},
+			}
+		end
+		return contractService.RecordBattleCompletion(evidence)
+	end,
+})
+contractService = ContractService.new({
+	protocolVersion = ContractProtocol.Version,
+	profileService = profileService,
+	acquisitionService = acquisitionService,
+	factory = CritterInstanceFactory.new(),
+	projector = ProfileProjector,
+	catalog = CritterCatalog,
+	generateId = function()
+		return HttpService:GenerateGUID(false)
+	end,
+	now = os.time,
+	activeBattleId = function(userId)
+		return battleService.getActiveBattleId(userId)
+	end,
 })
 local playerDataService = PlayerDataService.new({
 	protocolVersion = PlayerDataProtocol.Version,
@@ -194,9 +307,58 @@ playerDataRequestRemote.OnServerInvoke = function(player: Player, request)
 	return response
 end
 
+local breedingRequestRemote = breedingRequest :: RemoteFunction
+breedingRequestRemote.OnServerInvoke = function(player: Player, request)
+	local ok, response = pcall(function()
+		return breedingService.handleRequest(player.UserId, request)
+	end)
+	if not ok then
+		DevelopmentLogger.warn(`Breeding request failed: {response}`)
+		return {
+			ok = false,
+			errors = { { code = "INTERNAL_ERROR", message = "Breeding request failed" } },
+		}
+	end
+	return response
+end
+
+local eggRequestRemote = eggRequest :: RemoteFunction
+eggRequestRemote.OnServerInvoke = function(player: Player, request)
+	local ok, response = pcall(function()
+		return eggService.handleRequest(player.UserId, request)
+	end)
+	if not ok then
+		DevelopmentLogger.warn(`Egg request failed: {response}`)
+		return {
+			ok = false,
+			errors = { { code = "INTERNAL_ERROR", message = "Egg request failed" } },
+		}
+	end
+	return response
+end
+
+local contractRequestRemote = contractRequest :: RemoteFunction
+contractRequestRemote.OnServerInvoke = function(player: Player, request)
+	local ok, response = pcall(function()
+		return contractService.handleRequest(player.UserId, request)
+	end)
+	if not ok then
+		DevelopmentLogger.warn(`Contract request failed: {response}`)
+		return {
+			ok = false,
+			errors = { { code = "INTERNAL_ERROR", message = "Contract request failed" } },
+		}
+	end
+	return response
+end
+
 Players.PlayerRemoving:Connect(function(player)
 	battleService.removePlayer(player.UserId)
 	playerDataService.removePlayer(player.UserId)
+	breedingService.removePlayer(player.UserId)
+	eggService.removePlayer(player.UserId)
+	acquisitionService.removePlayer(player.UserId)
+	contractService.removePlayer(player.UserId)
 	local released = profileService.ReleaseProfile(player.UserId)
 	if not released.ok then
 		DevelopmentLogger.warn(
@@ -255,6 +417,71 @@ local function loadPlayer(player: Player)
 					`Studio fixture failed for user {player.UserId}: {granted.errors[1].code}`
 				)
 			end
+		end
+	end
+	if result.ok and RunService:IsStudio() and DevelopmentConfig.EnableStudioBreedingFixture then
+		local profile = profileService.ReadProfile(player.UserId)
+		local hasBreedable = false
+		if profile.ok then
+			for _, critter in profile.value.ownedCritters do
+				if critter.breeding and critter.breeding.breedable then
+					hasBreedable = true
+					break
+				end
+			end
+		end
+		if not hasBreedable then
+			local now = os.time()
+			local grantedCritters = {}
+			for _, className in { "Tide", "Gale" } do
+				local definition = CritterCatalog.getByClass(className)
+				local genomes = GeneRegistry.founderGenomes(className)
+				if definition ~= nil and genomes ~= nil then
+					table.insert(grantedCritters, {
+						schemaVersion = 2,
+						id = `critter:{HttpService:GenerateGUID(false)}`,
+						definitionId = definition.id,
+						ownerUserId = player.UserId,
+						appearanceGenome = clone(genomes.appearanceGenome),
+						abilityGenome = clone(genomes.abilityGenome),
+						baseStats = clone(definition.baseStats),
+						acquisition = {
+							source = "STUDIO_FIXTURE",
+							acquiredAt = now,
+							sourceVersion = 1,
+						},
+						breeding = {
+							breedable = true,
+							generation = 0,
+							parentIds = {},
+							successfulBreedCount = 0,
+						},
+						tradable = false,
+						equipmentIds = {},
+					})
+				end
+			end
+			local update = profileService.UpdateProfile(player.UserId, function(candidate)
+				for _, critter in grantedCritters do
+					candidate.ownedCritters[critter.id] = clone(critter)
+				end
+				return { ok = true, value = true }
+			end)
+			if not update.ok then
+				DevelopmentLogger.warn(
+					`Studio breeding fixture failed for user {player.UserId}: {update.errors[1].code}`
+				)
+			end
+		end
+	end
+	if result.ok and RunService:IsStudio() and DevelopmentConfig.EnableStudioAcquisitionFixture then
+		local fixtureOk, fixtureError = pcall(function()
+			StudioAcquisitionFixtures.run(player, acquisitionService)
+		end)
+		if not fixtureOk then
+			DevelopmentLogger.warn(
+				`Studio acquisition fixture failed for user {player.UserId}: {tostring(fixtureError)}`
+			)
 		end
 	end
 end
