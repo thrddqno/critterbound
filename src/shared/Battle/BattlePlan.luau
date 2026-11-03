@@ -82,14 +82,29 @@ local function validatePlan(state, teamId: string, cardDefinitionsById)
 	local spent = 0
 
 	for index, queued in queue do
-		if seenCards[queued.cardInstanceId] then
+		if type(queued) ~= "table" then
+			return failure(
+				"INVALID_QUEUED_CARD",
+				"Queued card must be a table",
+				`queuedCards[{index}]`
+			)
+		end
+		local cardInstanceId = queued.cardInstanceId
+		if type(cardInstanceId) ~= "string" or cardInstanceId == "" then
+			return failure(
+				"INVALID_CARD_ID",
+				"Card instance ID is required",
+				`queuedCards[{index}].cardInstanceId`
+			)
+		end
+		if seenCards[cardInstanceId] then
 			return failure("CARD_ALREADY_QUEUED", "Card is already queued", `queuedCards[{index}]`)
 		end
-		seenCards[queued.cardInstanceId] = true
-		if not hand[queued.cardInstanceId] then
+		seenCards[cardInstanceId] = true
+		if not hand[cardInstanceId] then
 			return failure("CARD_NOT_IN_HAND", "Card is not in team hand", `queuedCards[{index}]`)
 		end
-		local card = cards[queued.cardInstanceId]
+		local card = cards[cardInstanceId]
 		if card == nil then
 			return failure(
 				"UNKNOWN_CARD_INSTANCE",
@@ -205,6 +220,26 @@ local function mutateQueue(state, teamId, nextQueue, cardDefinitionsById)
 end
 
 local function queueCard(state, teamId: string, request, cardDefinitionsById)
+	if type(request) ~= "table" then
+		return failure("INVALID_QUEUE_REQUEST", "Queue request must be a table", nil)
+	end
+	if type(request.cardInstanceId) ~= "string" or request.cardInstanceId == "" then
+		return failure("INVALID_CARD_ID", "Card instance ID is required", "cardInstanceId")
+	end
+	if type(request.sourceCombatantId) ~= "string" or request.sourceCombatantId == "" then
+		return failure(
+			"INVALID_CARD_SOURCE",
+			"Source combatant ID is required",
+			"sourceCombatantId"
+		)
+	end
+	if request.targetCombatantIds ~= nil and type(request.targetCombatantIds) ~= "table" then
+		return failure(
+			"INVALID_TARGET_COUNT",
+			"Target combatant IDs must be a table",
+			"targetCombatantIds"
+		)
+	end
 	local teamState = findTeamState(state, teamId)
 	if teamState == nil then
 		return failure("TEAM_NOT_FOUND", "Team is not part of battle", "teamId")

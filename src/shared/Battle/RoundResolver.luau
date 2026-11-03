@@ -328,7 +328,9 @@ local function resolveRound(state, dependencies)
 			emitDefeat(combatantId)
 		end
 		matchOutcome = evaluateOutcome(nextState, combatantsById)
-		StatusEffects.expire(combatantOrder, roundNumber, factory, events)
+		if matchOutcome == nil then
+			StatusEffects.expire(combatantOrder, roundNumber, factory, events)
+		end
 	end
 
 	nextState.lastResolvedRound = roundNumber

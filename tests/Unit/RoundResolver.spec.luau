@@ -246,6 +246,15 @@ return function(Harness)
 		end
 		poison("combatant:t1:s1")
 		poison("combatant:t2:s1")
+		local first = Fixtures.findCombatant(state, "combatant:t1:s1")
+		first.shields = {
+			{
+				id = "shield.terminal",
+				sourceCombatantId = "source",
+				amount = 10,
+				expiresAtRound = 1,
+			},
+		}
 
 		local result = resolve(state)
 		Harness.expect(result.ok)
@@ -260,6 +269,10 @@ return function(Harness)
 			end
 		end
 		Harness.equal(defeats, 2)
+		Harness.equal(findEvent(result.value.events, "STATUS_EXPIRED"), nil)
+		local resolvedFirst = Fixtures.findCombatant(result.value.state, "combatant:t1:s1")
+		Harness.equal(#resolvedFirst.statusEffects, 1)
+		Harness.equal(#resolvedFirst.shields, 1)
 	end)
 
 	Harness.test("identical input produces identical state and events", function()

@@ -41,6 +41,43 @@ local function failure(code: string, message: string)
 	return { ok = false, errors = { { code = code, message = message } } }
 end
 
+local function isNonEmptyString(value): boolean
+	return type(value) == "string" and value ~= ""
+end
+
+local function isPositiveInteger(value): boolean
+	return type(value) == "number" and value > 0 and value % 1 == 0
+end
+
+local function validatePayload(commandType: string, payload)
+	if type(payload) ~= "table" then
+		return failure("INVALID_PAYLOAD", "Command payload must be a table")
+	end
+	if commandType == "QUEUE_CARD" then
+		if not isNonEmptyString(payload.cardInstanceId) then
+			return failure("INVALID_PAYLOAD", "Card instance ID is required")
+		end
+		if not isNonEmptyString(payload.sourceCombatantId) then
+			return failure("INVALID_PAYLOAD", "Source combatant ID is required")
+		end
+		if payload.targetCombatantIds ~= nil and type(payload.targetCombatantIds) ~= "table" then
+			return failure("INVALID_PAYLOAD", "Target combatant IDs must be a table")
+		end
+	elseif commandType == "REMOVE_QUEUED_CARD" then
+		if not isNonEmptyString(payload.cardInstanceId) then
+			return failure("INVALID_PAYLOAD", "Card instance ID is required")
+		end
+	elseif commandType == "REORDER_QUEUED_CARD" then
+		if not isNonEmptyString(payload.cardInstanceId) then
+			return failure("INVALID_PAYLOAD", "Card instance ID is required")
+		end
+		if not isPositiveInteger(payload.newIndex) then
+			return failure("INVALID_PAYLOAD", "New queue index must be a positive integer")
+		end
+	end
+	return nil
+end
+
 local function findTeam(state, teamId)
 	for _, team in state.teams do
 		if team.id == teamId then
@@ -99,7 +136,14 @@ local function process(session, authenticatedUserId: number, envelope, context)
 		return failure("STALE_PLAN_VERSION", "Private plan version is stale")
 	end
 
-	local payload = envelope.payload or {}
+	local payload = envelope.payload
+	if payload == nil then
+		payload = {}
+	end
+	local payloadFailure = validatePayload(envelope.commandType, payload)
+	if payloadFailure ~= nil then
+		return payloadFailure
+	end
 	local result
 	if envelope.commandType == "QUEUE_CARD" then
 		result = context.battlePlan.queueCard(state, team.id, payload, context.cardDefinitionsById)

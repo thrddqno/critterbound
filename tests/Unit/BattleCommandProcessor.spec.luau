@@ -92,6 +92,39 @@ return function(Harness)
 		Harness.deepEqual(session, before)
 	end)
 
+	Harness.test("malformed command payloads return errors without throwing", function()
+		local session, context = setup()
+		local before = Harness.clone(session)
+
+		local nonTable = command("bad.payload", "team.1", "QUEUE_CARD", 1, 0, "invalid")
+		Harness.expect(
+			Harness.hasError(Processor.process(session, 101, nonTable, context), "INVALID_PAYLOAD")
+		)
+
+		local missingCard = command("bad.card", "team.1", "QUEUE_CARD", 1, 0, {
+			sourceCombatantId = "combatant.team1.1",
+			targetCombatantIds = {},
+		})
+		Harness.expect(
+			Harness.hasError(
+				Processor.process(session, 101, missingCard, context),
+				"INVALID_PAYLOAD"
+			)
+		)
+
+		local invalidReorder = command("bad.reorder", "team.1", "REORDER_QUEUED_CARD", 1, 0, {
+			cardInstanceId = "card.1",
+			newIndex = 0,
+		})
+		Harness.expect(
+			Harness.hasError(
+				Processor.process(session, 101, invalidReorder, context),
+				"INVALID_PAYLOAD"
+			)
+		)
+		Harness.deepEqual(session, before)
+	end)
+
 	Harness.test("accepted private command advances only team plan version", function()
 		local session, context = setup()
 		local teamState = session.state.teamRoundStates[1]
