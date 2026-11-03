@@ -1,7 +1,7 @@
 --!strict
 
 local Protocol = table.freeze({
-	Version = 2,
+	Version = 3,
 	CommandTypes = table.freeze({
 		QUEUE_CARD = "QUEUE_CARD",
 		REMOVE_QUEUED_CARD = "REMOVE_QUEUED_CARD",

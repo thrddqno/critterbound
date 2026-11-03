@@ -97,8 +97,9 @@ local function findTeamState(state, teamId)
 end
 
 local function process(session, authenticatedUserId: number, envelope, context)
-	if type(envelope) ~= "table" or envelope.protocolVersion ~= 2 then
-		return failure("UNSUPPORTED_PROTOCOL", "Protocol version 2 is required")
+	local protocolVersion = session.protocolVersion or 2
+	if type(envelope) ~= "table" or envelope.protocolVersion ~= protocolVersion then
+		return failure("UNSUPPORTED_PROTOCOL", `Protocol version {protocolVersion} is required`)
 	end
 	if type(envelope.commandId) ~= "string" or envelope.commandId == "" then
 		return failure("INVALID_COMMAND", "Command ID is required")

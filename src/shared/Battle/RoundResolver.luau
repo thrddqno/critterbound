@@ -57,6 +57,44 @@ local function indexCards(state)
 	return result
 end
 
+local function retiredCardInstanceIds(state): { [string]: boolean }
+	local defeatedCritterInstances = {}
+	for _, combatant in state.combatants do
+		if combatant.currentHealth <= 0 then
+			defeatedCritterInstances[combatant.critterInstanceId] = true
+		end
+	end
+
+	local retired = {}
+	for _, card in state.cardInstances or {} do
+		if defeatedCritterInstances[card.sourceCritterInstanceId] then
+			retired[card.id] = true
+		end
+	end
+	return retired
+end
+
+local function retireCardsFromActiveZones(state, retired, deck)
+	for _, teamState in state.teamRoundStates do
+		local zones = deck.removeCards({
+			drawPileCardInstanceIds = teamState.drawPileCardInstanceIds or {},
+			handCardInstanceIds = teamState.handCardInstanceIds or {},
+			discardCardInstanceIds = teamState.discardCardInstanceIds or {},
+		}, retired)
+		teamState.drawPileCardInstanceIds = zones.drawPileCardInstanceIds
+		teamState.handCardInstanceIds = zones.handCardInstanceIds
+		teamState.discardCardInstanceIds = zones.discardCardInstanceIds
+
+		local queue = {}
+		for _, queued in teamState.queuedCards or {} do
+			if not retired[queued.cardInstanceId] then
+				table.insert(queue, queued)
+			end
+		end
+		teamState.queuedCards = queue
+	end
+end
+
 local function sortedTeamStates(state, teamsById)
 	local ordered = table.clone(state.teamRoundStates)
 	table.sort(ordered, function(a, b)
@@ -334,8 +372,10 @@ local function resolveRound(state, dependencies)
 	end
 
 	nextState.lastResolvedRound = roundNumber
+	local retired = retiredCardInstanceIds(nextState)
 
 	if matchOutcome ~= nil then
+		retireCardsFromActiveZones(nextState, retired, deck)
 		nextState.phase = "COMPLETED"
 		nextState.stateVersion = (nextState.stateVersion or 0) + 1
 		table.insert(
@@ -363,6 +403,7 @@ local function resolveRound(state, dependencies)
 		economy = economy,
 		shuffle = shuffle,
 		drawPerRound = drawPerRound,
+		retiredCardInstanceIds = retired,
 	})
 	if not transition.ok then
 		return transition

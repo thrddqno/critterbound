@@ -22,8 +22,10 @@ its full card queue in submitted order before the next Critter acts. Equal-Speed
 team priority by round, then use battlefield slot and combatant identifier. This tie rule is a
 Foundation Run 2 assumption and may be balance-tested later without changing planning semantics.
 
-Current targeting contracts cover one target: self, another ally, an enemy, or any combatant.
-Area targeting, defeated-target rules, retargeting, and effect semantics remain unresolved.
+Offensive `ENEMY` cards automatically focus the living opponent with lowest effective Speed. Slot,
+then combatant ID break ties. This makes Speed both initiative and threat-management state while
+preventing unrestricted focus fire. Ally and `ANY` targeting remain manual; self, frontline, and area
+rules are automatic. Defeated Critters retire all their cards from active deck zones.
 
 ## Long-term systems
 

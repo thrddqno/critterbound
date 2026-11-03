@@ -54,10 +54,11 @@ server projections. Missing references return structured errors instead of parti
 
 ## Local planning
 
-Target selection is client interaction state, but chosen IDs are validated by the server. Queue,
+Manual `ALLY` and `ANY` target selection is client interaction state, but chosen IDs are validated by
+the server. Automatic rules submit no IDs; `ENEMY` resolves to the slowest living opponent. Queue,
 remove, reorder, clear, and commit responses replace local planning state with authoritative
-snapshots. Command input locks while a request is pending or playback runs. Restart increments a playback
-epoch so delayed events cannot overwrite the fresh battle.
+snapshots. Command input locks while a request is pending or playback runs. Restart increments a
+playback epoch so delayed events cannot overwrite the fresh battle.
 
 ## Stabilized layout
 

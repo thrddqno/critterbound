@@ -29,9 +29,7 @@ return function(Harness)
 			return nil
 		end
 		local targetIds = {}
-		if definition.targetingRule == "SELF" then
-			targetIds = { source.id }
-		elseif definition.targetingRule == "ALLY" then
+		if definition.targetingRule == "ALLY" then
 			for _, combatant in snapshot.battleState.combatants do
 				if
 					combatant.teamId == source.teamId
@@ -45,7 +43,7 @@ return function(Harness)
 			if #targetIds == 0 then
 				return nil
 			end
-		elseif definition.targetingRule == "ENEMY" or definition.targetingRule == "ANY" then
+		elseif definition.targetingRule == "ANY" then
 			local candidates = {}
 			for _, combatant in snapshot.battleState.combatants do
 				if combatant.teamId ~= source.teamId and combatant.currentHealth > 0 then

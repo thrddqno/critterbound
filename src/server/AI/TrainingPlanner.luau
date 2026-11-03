@@ -2,7 +2,24 @@
 
 local TrainingPlanner = {}
 
-local DERIVED_RULES = { FRONT_ENEMY = true, ALL_ALLIES = true, ALL_ENEMIES = true }
+local function requireSharedBattle(name: string)
+	if script ~= nil then
+		local ReplicatedStorage = game:GetService("ReplicatedStorage")
+		return require((ReplicatedStorage.Shared.Battle :: any)[name])
+	end
+	return require(`../../shared/Battle/{name}`)
+end
+
+local function requireSharedDefinition(name: string)
+	if script ~= nil then
+		local ReplicatedStorage = game:GetService("ReplicatedStorage")
+		return require((ReplicatedStorage.Shared.Definitions :: any)[name])
+	end
+	return require(`../../shared/Definitions/{name}`)
+end
+
+local StatusEffects = requireSharedBattle("StatusEffects")
+local TargetingRules = requireSharedDefinition("TargetingRules")
 
 local function indexById(values)
 	local result = {}
@@ -42,10 +59,7 @@ local function orderedLiving(combatants, predicate)
 end
 
 local function chooseTargets(rule: string, source, teamId: string, combatants): { string }?
-	if rule == "SELF" then
-		return { source.id }
-	end
-	if DERIVED_RULES[rule] then
+	if TargetingRules.isAutomatic(rule) then
 		return {}
 	end
 	if rule == "ALLY" then
@@ -61,6 +75,27 @@ local function chooseTargets(rule: string, source, teamId: string, combatants): 
 		return if enemies[1] ~= nil then { enemies[1].id } else nil
 	end
 	return nil
+end
+
+local function slowestEnemy(source, combatants)
+	local enemies = {}
+	for _, combatant in combatants do
+		if combatant.currentHealth > 0 and combatant.teamId ~= source.teamId then
+			table.insert(enemies, combatant)
+		end
+	end
+	table.sort(enemies, function(a, b)
+		local aSpeed = StatusEffects.effectiveSpeed(a)
+		local bSpeed = StatusEffects.effectiveSpeed(b)
+		if aSpeed ~= bSpeed then
+			return aSpeed < bSpeed
+		end
+		if a.slot ~= b.slot then
+			return a.slot < b.slot
+		end
+		return a.id < b.id
+	end)
+	return enemies[1]
 end
 
 local function effectTotals(definition)
@@ -141,12 +176,17 @@ local function plan(state, teamId: string, cardDefinitionsById)
 			local targets =
 				chooseTargets(definition.targetingRule, source, teamId, state.combatants)
 			if targets ~= nil then
+				local scoreTargets = targets
+				if definition.targetingRule == "ENEMY" then
+					local target = slowestEnemy(source, state.combatants)
+					scoreTargets = if target ~= nil then { target.id } else {}
+				end
 				table.insert(candidates, {
 					cardInstanceId = cardId,
 					sourceCombatantId = source.id,
 					targetCombatantIds = targets,
 					energyCost = definition.energyCost,
-					score = scoreCandidate(definition, targets, combatantsById, source),
+					score = scoreCandidate(definition, scoreTargets, combatantsById, source),
 				})
 			end
 		end

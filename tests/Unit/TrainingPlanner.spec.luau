@@ -86,4 +86,26 @@ return function(Harness)
 		local secondPlan = Planner.plan(second, input.aiTeamId, input.cardDefinitionsById)
 		Harness.deepEqual(firstPlan, secondPlan)
 	end)
+
+	Harness.test("AI submits no target IDs for automatic ENEMY cards", function()
+		local state, input = setup()
+		local aiState = state.teamRoundStates[2]
+		local attackCardId = nil
+		for _, card in state.cardInstances do
+			local definition = input.cardDefinitionsById[card.definitionId]
+			if
+				definition.targetingRule == "ENEMY"
+				and string.find(card.sourceCritterInstanceId, ".ai.", 1, true)
+			then
+				attackCardId = card.id
+				break
+			end
+		end
+		Harness.expect(attackCardId ~= nil)
+		aiState.handCardInstanceIds = { attackCardId }
+		local planned = Planner.plan(state, input.aiTeamId, input.cardDefinitionsById)
+		Harness.expect(planned.ok)
+		Harness.equal(#planned.value.requests, 1)
+		Harness.deepEqual(planned.value.requests[1].targetCombatantIds, {})
+	end)
 end

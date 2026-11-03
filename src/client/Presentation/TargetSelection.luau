@@ -2,7 +2,15 @@
 
 local TargetSelection = {}
 
-local DERIVED = { FRONT_ENEMY = true, ALL_ALLIES = true, ALL_ENEMIES = true }
+local function requireTargetingRules()
+	if script ~= nil then
+		local ReplicatedStorage = game:GetService("ReplicatedStorage")
+		return require(ReplicatedStorage.Shared.Definitions.TargetingRules)
+	end
+	return require("../../shared/Definitions/TargetingRules")
+end
+
+local TargetingRules = requireTargetingRules()
 
 local function legalTargetIds(card, model): { string }
 	local source = nil
@@ -15,18 +23,18 @@ local function legalTargetIds(card, model): { string }
 	if source == nil or source.defeated then
 		return {}
 	end
-	if card.targetingRule == "SELF" then
-		return { source.id }
-	end
-	if DERIVED[card.targetingRule] then
+	if TargetingRules.isAutomatic(card.targetingRule) then
 		return {}
 	end
 	local result = {}
 	for _, critter in model.critters do
 		if not critter.defeated then
 			local legal = card.targetingRule == "ANY"
-				or (card.targetingRule == "ALLY" and critter.teamId == source.teamId and critter.id ~= source.id)
-				or (card.targetingRule == "ENEMY" and critter.teamId ~= source.teamId)
+				or (
+					card.targetingRule == "ALLY"
+					and critter.teamId == source.teamId
+					and critter.id ~= source.id
+				)
 			if legal then
 				table.insert(result, critter.id)
 			end
@@ -37,9 +45,7 @@ local function legalTargetIds(card, model): { string }
 end
 
 local function needsSelection(card): boolean
-	return card.targetingRule == "ALLY"
-		or card.targetingRule == "ENEMY"
-		or card.targetingRule == "ANY"
+	return card.targetingRule == "ALLY" or card.targetingRule == "ANY"
 end
 
 TargetSelection.legalTargetIds = legalTargetIds

@@ -11,6 +11,24 @@ local function cloneArray<T>(values: { T }): { T }
 	return table.clone(values)
 end
 
+local function withoutCards(values: { string }, removed: { [string]: boolean }): { string }
+	local kept = {}
+	for _, cardId in values do
+		if not removed[cardId] then
+			table.insert(kept, cardId)
+		end
+	end
+	return kept
+end
+
+local function removeCards(zones: Zones, removed: { [string]: boolean }): Zones
+	return {
+		drawPileCardInstanceIds = withoutCards(zones.drawPileCardInstanceIds, removed),
+		handCardInstanceIds = withoutCards(zones.handCardInstanceIds, removed),
+		discardCardInstanceIds = withoutCards(zones.discardCardInstanceIds, removed),
+	}
+end
+
 local function draw(zones: Zones, count: number, rng: Rng, shuffleFn)
 	if count % 1 ~= 0 or count < 0 then
 		return {
@@ -53,4 +71,7 @@ local function draw(zones: Zones, count: number, rng: Rng, shuffleFn)
 	}
 end
 
-return table.freeze({ draw = draw })
+return table.freeze({
+	draw = draw,
+	removeCards = removeCards,
+})

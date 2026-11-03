@@ -21,6 +21,15 @@ export type ValidationResult = ValidationSuccess | ValidationFailure
 type AnyRecord = { [any]: any }
 type RecordsById = { [string]: AnyRecord }
 
+local function requireDefinition(name: string)
+	if script ~= nil then
+		return require((script.Parent.Parent.Definitions :: any)[name])
+	end
+	return require(`../Definitions/{name}`)
+end
+
+local TargetingRules = requireDefinition("TargetingRules")
+
 export type BattleValidationContext = {
 	team: AnyRecord,
 	combatantsById: RecordsById,
@@ -44,13 +53,6 @@ local VALID_TARGETING_RULES: { [string]: boolean } = {
 	ALLY = true,
 	ENEMY = true,
 	ANY = true,
-	FRONT_ENEMY = true,
-	ALL_ALLIES = true,
-	ALL_ENEMIES = true,
-}
-
--- Targeting rules whose targets are derived by the server. Clients submit an empty list.
-local DERIVED_TARGETING_RULES: { [string]: boolean } = {
 	FRONT_ENEMY = true,
 	ALL_ALLIES = true,
 	ALL_ENEMIES = true,
@@ -648,13 +650,13 @@ local function validateTarget(
 	path: string
 )
 	local rule = cardDefinition.targetingRule
-	if type(rule) == "string" and DERIVED_TARGETING_RULES[rule] then
+	if type(rule) == "string" and TargetingRules.isAutomatic(rule) then
 		local derivedCount = getArrayLength(queuedCard.targetCombatantIds)
 		if derivedCount ~= 0 then
 			addError(
 				errors,
 				"INVALID_TARGET_COUNT",
-				"Derived targeting rules require an empty client target list",
+				"Automatic targeting rules require an empty client target list",
 				`{path}.targetCombatantIds`
 			)
 		end
@@ -685,9 +687,11 @@ local function validateTarget(
 	end
 
 	local legal = rule == "ANY"
-		or (rule == "SELF" and targetId == sourceCombatant.id)
-		or (rule == "ALLY" and target.teamId == sourceCombatant.teamId and targetId ~= sourceCombatant.id)
-		or (rule == "ENEMY" and target.teamId ~= sourceCombatant.teamId)
+		or (
+			rule == "ALLY"
+			and target.teamId == sourceCombatant.teamId
+			and targetId ~= sourceCombatant.id
+		)
 
 	if not legal then
 		addError(

@@ -2,12 +2,14 @@
 
 local BattlePlan = {}
 
--- Targeting rules whose targets are derived by the server at resolution time.
-local DERIVED_TARGETING_RULES = {
-	FRONT_ENEMY = true,
-	ALL_ALLIES = true,
-	ALL_ENEMIES = true,
-}
+local function requireDefinition(name: string)
+	if script ~= nil then
+		return require((script.Parent.Parent.Definitions :: any)[name])
+	end
+	return require(`../Definitions/{name}`)
+end
+
+local TargetingRules = requireDefinition("TargetingRules")
 
 local function clone(value)
 	if type(value) ~= "table" then
@@ -145,11 +147,11 @@ local function validatePlan(state, teamId: string, cardDefinitionsById)
 		spent += definition.energyCost
 
 		local rule = definition.targetingRule
-		if DERIVED_TARGETING_RULES[rule] then
+		if TargetingRules.isAutomatic(rule) then
 			if type(queued.targetCombatantIds) ~= "table" or #queued.targetCombatantIds ~= 0 then
 				return failure(
 					"INVALID_TARGET_COUNT",
-					"Derived targeting rules require an empty target list",
+					"Automatic targeting rules require an empty target list",
 					`queuedCards[{index}].targetCombatantIds`
 				)
 			end
@@ -171,9 +173,7 @@ local function validatePlan(state, teamId: string, cardDefinitionsById)
 				)
 			end
 			local legal = rule == "ANY"
-				or (rule == "SELF" and targetId == source.id)
 				or (rule == "ALLY" and target.teamId == source.teamId and targetId ~= source.id)
-				or (rule == "ENEMY" and target.teamId ~= source.teamId)
 			if not legal then
 				return failure(
 					"INVALID_TARGET",

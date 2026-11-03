@@ -20,24 +20,10 @@ return function(Harness)
 			}, model),
 			{ "ally.other" }
 		)
-		Harness.deepEqual(
-			TargetSelection.legalTargetIds({
-				sourceCombatantId = "ally.source",
-				targetingRule = "ENEMY",
-			}, model),
-			{ "enemy.front" }
-		)
-		Harness.deepEqual(
-			TargetSelection.legalTargetIds({
-				sourceCombatantId = "ally.source",
-				targetingRule = "SELF",
-			}, model),
-			{ "ally.source" }
-		)
 	end)
 
-	Harness.test("derived targets require no client selection", function()
-		for _, rule in { "FRONT_ENEMY", "ALL_ALLIES", "ALL_ENEMIES" } do
+	Harness.test("automatic targets require no client selection", function()
+		for _, rule in { "SELF", "ENEMY", "FRONT_ENEMY", "ALL_ALLIES", "ALL_ENEMIES" } do
 			Harness.expect(not TargetSelection.needsSelection({ targetingRule = rule }))
 			Harness.deepEqual(
 				TargetSelection.legalTargetIds({

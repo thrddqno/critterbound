@@ -143,11 +143,11 @@ return function(Harness)
 		Harness.expect(Harness.hasError(result, "INVALID_QUEUE_ORDER"))
 	end)
 
-	Harness.test("invalid target rejected", function()
+	Harness.test("forged automatic target rejected", function()
 		local command = Harness.clone(Fixtures.ValidCommand)
 		command.queuedCards[2].targetCombatantIds = { Fixtures.Combatants.feral.id }
 		local result = Validator.validateBattleCommand(command, Fixtures.Context)
-		Harness.expect(Harness.hasError(result, "INVALID_TARGET"))
+		Harness.expect(Harness.hasError(result, "INVALID_TARGET_COUNT"))
 	end)
 
 	Harness.test("card effects accept known kinds and reject malformed values", function()
@@ -198,24 +198,26 @@ return function(Harness)
 		Harness.expect(Harness.hasError(result, "INVALID_STAT"))
 	end)
 
-	Harness.test("derived targeting rules require an empty client target list", function()
-		local context = Harness.clone(Fixtures.Context)
-		context.cardDefinitionsById[Fixtures.CardInstances.feral.definitionId].targetingRule =
-			"ALL_ENEMIES"
+	Harness.test("automatic targeting rules require an empty client target list", function()
+		for _, rule in { "SELF", "ENEMY", "FRONT_ENEMY", "ALL_ALLIES", "ALL_ENEMIES" } do
+			local context = Harness.clone(Fixtures.Context)
+			context.cardDefinitionsById[Fixtures.CardInstances.feral.definitionId].targetingRule =
+				rule
+			local command = Harness.clone(Fixtures.ValidCommand)
+			Harness.expect(Validator.validateBattleCommand(command, context).ok)
 
-		local command = Harness.clone(Fixtures.ValidCommand)
-		command.queuedCards[2].targetCombatantIds = {}
-		Harness.expect(Validator.validateBattleCommand(command, context).ok)
-
-		command.queuedCards[2].targetCombatantIds = { Fixtures.Combatants.enemyStone.id }
-		local result = Validator.validateBattleCommand(command, context)
-		Harness.expect(Harness.hasError(result, "INVALID_TARGET_COUNT"))
+			command.queuedCards[2].targetCombatantIds = { Fixtures.Combatants.enemyStone.id }
+			local result = Validator.validateBattleCommand(command, context)
+			Harness.expect(Harness.hasError(result, "INVALID_TARGET_COUNT"))
+		end
 	end)
 
 	Harness.test("single-target rules reject an empty target list", function()
+		local context = Harness.clone(Fixtures.Context)
+		context.cardDefinitionsById[Fixtures.CardInstances.feral.definitionId].targetingRule = "ANY"
 		local command = Harness.clone(Fixtures.ValidCommand)
 		command.queuedCards[2].targetCombatantIds = {}
-		local result = Validator.validateBattleCommand(command, Fixtures.Context)
+		local result = Validator.validateBattleCommand(command, context)
 		Harness.expect(Harness.hasError(result, "INVALID_TARGET_COUNT"))
 	end)
 

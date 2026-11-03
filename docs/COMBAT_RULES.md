@@ -29,7 +29,8 @@ attack. Simultaneous commitment closes planning; initiative and the rules below 
 Energy and unused cards carry between rounds. Energy caps at 10. Hands cap at 10; excess draws stay
 in the draw pile. Empty draw piles reshuffle discard deterministically when another draw is needed.
 Cards resolved during the round are discarded before the next draw, so they can be reshuffled and
-drawn again when the draw pile is empty.
+drawn again when the draw pile is empty. When a Critter is defeated, all cards sourced from that
+Critter retire from draw, hand, discard, and queue before the next draw.
 
 ## Battle phases
 
@@ -72,9 +73,9 @@ An empty plan is legal. A command may contain at most 24 cards and is further co
 actually held and available energy. Card instance identifiers may appear once per command.
 Per-Critter `queueIndex` values must be contiguous from one.
 
-Single-target rules require exactly one submitted target: `SELF`, `ALLY`, `ENEMY`, and `ANY`.
-Server-derived rules require an empty client target list: `FRONT_ENEMY`, `ALL_ALLIES`, and
-`ALL_ENEMIES`. The server derives their targets at resolution time.
+Manual rules require exactly one submitted target: `ALLY` and `ANY`. Automatic rules require an
+empty client target list: `SELF`, `ENEMY`, `FRONT_ENEMY`, `ALL_ALLIES`, and `ALL_ENEMIES`. The server
+derives automatic targets at resolution time and rejects forged target IDs.
 
 Run 4A reserves energy while planning and deducts it on authoritative commit. Cards remain in hand
 and queue until resolution. One committed team does not end planning for the other team.
@@ -98,15 +99,16 @@ Targets are resolved against current living combatants before effects execute:
 
 - `SELF`: the source Critter while alive.
 - `ALLY`: the submitted living ally; otherwise the lowest-slot living ally other than the source.
-- `ENEMY`: the submitted living enemy; otherwise the lowest-slot living enemy.
+- `ENEMY`: the living enemy with lowest effective Speed; ties use slot, then combatant identifier.
 - `FRONT_ENEMY`: the lowest-slot living enemy; submitted targets are ignored.
 - `ALL_ALLIES`: every living ally ordered by slot, including the source.
 - `ALL_ENEMIES`: every living enemy ordered by slot.
 - `ANY`: the submitted living target; otherwise the effect is skipped.
 
-Slot ties are broken by combatant identifier. If no legal target exists, the effect is skipped but
-the card still consumes its turn and is discarded. `TARGET_SELECTED` records whether retargeting or
-skipping occurred.
+Automatic `ENEMY` selection uses effective Speed at that card's resolution time. Earlier Speed
+effects can therefore change later targets even though initiative remains snapshotted. If no legal
+target exists, the effect is skipped but the card still consumes its turn and is discarded.
+`TARGET_SELECTED` records whether retargeting or skipping occurred.
 
 ## Damage pipeline
 
@@ -179,6 +181,9 @@ the next round's initiative.
 
 Knockouts are evaluated after each card action and after the round-end poison batch. A defeated
 Critter cannot act again; pending actions are canceled with `ACTION_CANCELED` and reason `DEFEATED`.
+Its sourced cards retire from every active zone. Retirement preserves survivor order, consumes no
+RNG, grants no energy refund, and does not add replacement draws. Immutable `CardInstance` records
+remain available for event history.
 
 The match completes when at most one team has a living Critter:
 
@@ -196,11 +201,12 @@ After a live round:
 
 1. Poison ticks and knockouts are resolved.
 2. Statuses and shields expiring this round are removed.
-3. Every queued card, including canceled cards, leaves hand for discard.
-4. Queues clear, reserved energy resets, commitment resets, and `planVersion` advances.
-5. Unused energy carries and gains +2, capped at 10.
-6. Each team draws three cards in team-index order, capped at 10 hand cards.
-7. `roundNumber` advances and the phase returns to `PLANNING`.
+3. Cards sourced from defeated Critters retire from all active zones.
+4. Remaining queued cards, including canceled cards, leave hand for discard.
+5. Queues clear, reserved energy resets, commitment resets, and `planVersion` advances.
+6. Unused energy carries and gains +2, capped at 10.
+7. Each team draws three cards in team-index order, capped at 10 hand cards.
+8. `roundNumber` advances and the phase returns to `PLANNING`.
 
 The RNG stream continues from `state.rng`; shuffles use `PARK_MILLER_V1`. Duplicate transitions are
 prevented by the resolver guards above.

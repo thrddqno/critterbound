@@ -89,13 +89,10 @@ function BattleScreenController.start(playerGui: PlayerGui, battleRequest: Remot
 					updateScreen()
 					return
 				end
-				local targets = if card.targetingRule == "SELF"
-					then { card.sourceCombatantId }
-					else {}
 				sendCommand("QUEUE_CARD", {
 					cardInstanceId = card.id,
 					sourceCombatantId = card.sourceCombatantId,
-					targetCombatantIds = targets,
+					targetCombatantIds = {},
 				})
 			end,
 			onRemoveCard = function(cardInstanceId)

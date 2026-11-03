@@ -48,6 +48,7 @@ local function apply(state, resolvedCardsByTeamId, dependencies)
 	local shuffle = deps.shuffle or DeterministicRng.shuffle
 	local drawPerRound = deps.drawPerRound or CombatConstants.DrawPerRound
 	local resolvedByTeam = resolvedCardsByTeamId or {}
+	local retired = deps.retiredCardInstanceIds or {}
 
 	local nextState = DeepClone.clone(state)
 	local rng = nextState.rng
@@ -62,6 +63,15 @@ local function apply(state, resolvedCardsByTeamId, dependencies)
 	local ordered = orderedTeamStates(nextState)
 
 	for _, teamState in ordered do
+		local zones = deck.removeCards({
+			drawPileCardInstanceIds = teamState.drawPileCardInstanceIds or {},
+			handCardInstanceIds = teamState.handCardInstanceIds or {},
+			discardCardInstanceIds = teamState.discardCardInstanceIds or {},
+		}, retired)
+		teamState.drawPileCardInstanceIds = zones.drawPileCardInstanceIds
+		teamState.handCardInstanceIds = zones.handCardInstanceIds
+		teamState.discardCardInstanceIds = zones.discardCardInstanceIds
+
 		local resolved = resolvedByTeam[teamState.teamId] or {}
 		local resolvedSet = {}
 		for _, cardId in resolved do
@@ -76,7 +86,9 @@ local function apply(state, resolvedCardsByTeamId, dependencies)
 		end
 		local discard = table.clone(teamState.discardCardInstanceIds or {})
 		for _, cardId in resolved do
-			table.insert(discard, cardId)
+			if not retired[cardId] then
+				table.insert(discard, cardId)
+			end
 		end
 
 		teamState.handCardInstanceIds = hand

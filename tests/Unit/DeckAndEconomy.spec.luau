@@ -38,4 +38,18 @@ return function(Harness)
 		Harness.equal(#first.value.zones.handCardInstanceIds, 2)
 		Harness.equal(#first.value.zones.discardCardInstanceIds, 0)
 	end)
+
+	Harness.test("card retirement preserves survivor order without mutation", function()
+		local zones = {
+			drawPileCardInstanceIds = { "d1", "retired.1", "d2" },
+			handCardInstanceIds = { "retired.2", "h1", "h2" },
+			discardCardInstanceIds = { "x1", "retired.1", "x2" },
+		}
+		local before = Harness.clone(zones)
+		local result = Deck.removeCards(zones, { ["retired.1"] = true, ["retired.2"] = true })
+		Harness.deepEqual(result.drawPileCardInstanceIds, { "d1", "d2" })
+		Harness.deepEqual(result.handCardInstanceIds, { "h1", "h2" })
+		Harness.deepEqual(result.discardCardInstanceIds, { "x1", "x2" })
+		Harness.deepEqual(zones, before)
+	end)
 end

@@ -36,26 +36,21 @@ return function(Harness)
 			end
 		end
 		local definition = definitions[card.definitionId]
-		local target = source
-		if definition.targetingRule == "ENEMY" then
-			for _, combatant in state.combatants do
-				if combatant.teamId ~= teamId then
-					target = combatant
-					break
-				end
-			end
-		elseif definition.targetingRule == "ALLY" then
+		local targetIds = {}
+		if definition.targetingRule == "ALLY" then
 			for _, combatant in state.combatants do
 				if combatant.teamId == teamId and combatant.id ~= source.id then
-					target = combatant
+					targetIds = { combatant.id }
 					break
 				end
 			end
+		elseif definition.targetingRule == "ANY" then
+			targetIds = { source.id }
 		end
 		return {
 			cardInstanceId = cardId,
 			sourceCombatantId = source.id,
-			targetCombatantIds = { target.id },
+			targetCombatantIds = targetIds,
 		}
 	end
 

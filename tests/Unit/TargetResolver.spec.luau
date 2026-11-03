@@ -3,22 +3,24 @@
 return function(Harness)
 	local TargetResolver = require("../../src/shared/Battle/TargetResolver")
 
-	local function combatant(id, teamId, slot, health)
+	local function combatant(id, teamId, slot, speed, health)
 		return {
 			id = id,
 			teamId = teamId,
 			slot = slot,
 			currentHealth = health or 100,
+			stats = { speed = speed },
+			statusEffects = {},
 		}
 	end
 
 	local combatants = {
-		combatant("t1s1", "team.1", 1),
-		combatant("t1s2", "team.1", 2),
-		combatant("t1s3", "team.1", 3),
-		combatant("t2s1", "team.2", 1),
-		combatant("t2s2", "team.2", 2),
-		combatant("t2s3", "team.2", 3, 0),
+		combatant("t1s1", "team.1", 1, 20),
+		combatant("t1s2", "team.1", 2, 15),
+		combatant("t1s3", "team.1", 3, 10),
+		combatant("t2s1", "team.2", 1, 25),
+		combatant("t2s2", "team.2", 2, 10),
+		combatant("t2s3", "team.2", 3, 5, 0),
 	}
 	local byId = {}
 	for _, value in combatants do
@@ -51,14 +53,31 @@ return function(Harness)
 		byId.t1s2.currentHealth = 100
 	end)
 
-	Harness.test("ENEMY retargets to lowest-slot living enemy when invalid", function()
-		local result = TargetResolver.resolve("ENEMY", source, { "t2s3" }, byId)
-		Harness.equal(result.targetIds[1], "t2s1")
-		Harness.expect(result.retargeted)
+	Harness.test("ENEMY derives the slowest living enemy and ignores submissions", function()
+		local result = TargetResolver.resolve("ENEMY", source, { "t2s1" }, byId)
+		Harness.equal(result.targetIds[1], "t2s2")
+		Harness.expect(not result.retargeted)
 
-		local accepted = TargetResolver.resolve("ENEMY", source, { "t2s2" }, byId)
-		Harness.equal(accepted.targetIds[1], "t2s2")
-		Harness.expect(not accepted.retargeted)
+		byId.t2s2.statusEffects = {
+			{ statusId = "SPEED_UP", magnitude = 20, stackCount = 1 },
+		}
+		local changed = TargetResolver.resolve("ENEMY", source, {}, byId)
+		Harness.equal(changed.targetIds[1], "t2s1")
+		byId.t2s2.statusEffects = {}
+	end)
+
+	Harness.test("ENEMY Speed ties resolve by slot then identifier", function()
+		byId.t2s1.stats.speed = 10
+		local result = TargetResolver.resolve("ENEMY", source, {}, byId)
+		Harness.equal(result.targetIds[1], "t2s1")
+
+		byId.t2s1.slot = 2
+		byId.t2s2.slot = 2
+		local idTie = TargetResolver.resolve("ENEMY", source, {}, byId)
+		Harness.equal(idTie.targetIds[1], "t2s1")
+		byId.t2s1.slot = 1
+		byId.t2s2.slot = 2
+		byId.t2s1.stats.speed = 25
 	end)
 
 	Harness.test("FRONT_ENEMY derives the closest living frontline enemy", function()

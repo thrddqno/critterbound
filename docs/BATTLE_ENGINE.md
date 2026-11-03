@@ -20,6 +20,8 @@ opening draw. `RngState` stores algorithm, current state, and draw count.
 
 Team state owns draw, hand, discard, queue, energy, and private plan version. Draws stop at ten cards;
 excess cards stay in draw pile. Empty draw piles reshuffle discard through the explicit RNG stream.
+Defeat retires every card whose authoritative `sourceCritterInstanceId` belongs to that Critter.
+Retirement filters all active zones without deleting immutable card records or consuming RNG.
 
 Planning reserves energy without reducing the pool. Commit validates again, deducts reserved cost,
 and locks that team. Rejection leaves energy unchanged. Cards stay in hand and queue until Run 4B
@@ -58,3 +60,6 @@ stored receipts without resolving twice. Restart IDs are also idempotent. Player
 the in-memory session. Raw `BattleState` and `processedCommandsById` are never replicated.
 
 Production rate limiting, receipt pruning, and persistence remain future work.
+
+Protocol version 3 makes `SELF` and `ENEMY` automatic target rules. Clients submit empty target lists;
+the server resolves `ENEMY` to the living opponent with lowest effective Speed, then slot and ID.

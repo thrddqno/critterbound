@@ -243,13 +243,13 @@ local ValidCommand = {
 		{
 			cardInstanceId = CardInstances.stone.id,
 			sourceCombatantId = Combatants.stone.id,
-			targetCombatantIds = { Combatants.stone.id },
+			targetCombatantIds = {},
 			queueIndex = 1,
 		},
 		{
 			cardInstanceId = CardInstances.feral.id,
 			sourceCombatantId = Combatants.feral.id,
-			targetCombatantIds = { Combatants.enemyStone.id },
+			targetCombatantIds = {},
 			queueIndex = 1,
 		},
 	},

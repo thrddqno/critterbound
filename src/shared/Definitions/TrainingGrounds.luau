@@ -158,7 +158,7 @@ local cards = {
 		"Feral",
 		1,
 		"ENEMY",
-		"Deal 38 damage.",
+		"Deal 38 damage to slowest enemy.",
 		{ { kind = "DAMAGE", amount = 38 } }
 	),
 	card(
@@ -177,7 +177,7 @@ local cards = {
 		"Gain Attack Up for 2 rounds.",
 		{ { kind = "STATUS", statusId = "ATTACK_UP", magnitude = 8, duration = 2 } }
 	),
-	card("feral.rend", "Feral", 2, "ENEMY", "Deal 25 damage and poison.", {
+	card("feral.rend", "Feral", 2, "ENEMY", "Damage and poison slowest enemy.", {
 		{ kind = "DAMAGE", amount = 25 },
 		{ kind = "STATUS", statusId = "POISON", magnitude = 4, duration = 2 },
 	}),
@@ -210,7 +210,7 @@ local cards = {
 		"Verdant",
 		1,
 		"ENEMY",
-		"Poison enemy for 2 rounds.",
+		"Poison slowest enemy for 2 rounds.",
 		{ { kind = "STATUS", statusId = "POISON", magnitude = 6, duration = 2 } }
 	),
 	card(
@@ -230,7 +230,14 @@ local cards = {
 		"All allies gain 9 shield.",
 		{ { kind = "SHIELD", amount = 9 } }
 	),
-	card("tide.surge", "Tide", 1, "ENEMY", "Deal 42 damage.", { { kind = "DAMAGE", amount = 42 } }),
+	card(
+		"tide.surge",
+		"Tide",
+		1,
+		"ENEMY",
+		"Deal 42 damage to slowest enemy.",
+		{ { kind = "DAMAGE", amount = 42 } }
+	),
 	card("gale.ward", "Gale", 1, "SELF", "Gain 20 shield.", { { kind = "SHIELD", amount = 20 } }),
 	card(
 		"gale.shelter",
@@ -240,7 +247,14 @@ local cards = {
 		"All allies gain 8 shield.",
 		{ { kind = "SHIELD", amount = 8 } }
 	),
-	card("gale.gust", "Gale", 1, "ENEMY", "Deal 40 damage.", { { kind = "DAMAGE", amount = 40 } }),
+	card(
+		"gale.gust",
+		"Gale",
+		1,
+		"ENEMY",
+		"Deal 40 damage to slowest enemy.",
+		{ { kind = "DAMAGE", amount = 40 } }
+	),
 	card(
 		"gale.haste",
 		"Gale",
@@ -254,7 +268,7 @@ local cards = {
 		"Shade",
 		1,
 		"ENEMY",
-		"Deal 48 damage.",
+		"Deal 48 damage to slowest enemy.",
 		{ { kind = "DAMAGE", amount = 48 } }
 	),
 	card(
@@ -262,7 +276,7 @@ local cards = {
 		"Shade",
 		1,
 		"ENEMY",
-		"Poison enemy for 2 rounds.",
+		"Poison slowest enemy for 2 rounds.",
 		{ { kind = "STATUS", statusId = "POISON", magnitude = 8, duration = 2 } }
 	),
 	card(
@@ -270,7 +284,7 @@ local cards = {
 		"Shade",
 		1,
 		"ENEMY",
-		"Apply Attack Down for 2 rounds.",
+		"Weaken slowest enemy for 2 rounds.",
 		{ { kind = "STATUS", statusId = "ATTACK_DOWN", magnitude = 6, duration = 2 } }
 	),
 	card(

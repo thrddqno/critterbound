@@ -15,8 +15,8 @@ ordered effects. Definitions are authored game data and contain no player owners
 formulas are documented in `COMBAT_RULES.md`.
 
 `CardDefinition.targetingRule` supports `SELF`, `ALLY`, `ENEMY`, `ANY`, `FRONT_ENEMY`,
-`ALL_ALLIES`, and `ALL_ENEMIES`. The last three are server-derived and require an empty client
-target list.
+`ALL_ALLIES`, and `ALL_ENEMIES`. `SELF`, `ENEMY`, `FRONT_ENEMY`, `ALL_ALLIES`, and `ALL_ENEMIES`
+are server-derived and require an empty client target list. `ALLY` and `ANY` require one target.
 
 `CardDefinition.effects` is an optional ordered `{ CardEffect }` array:
 
@@ -46,7 +46,8 @@ Changing appearance data cannot modify ability data. No inheritance, breeding, m
 equipment, or persistence behavior exists through Run 5.
 
 `CardInstance` identifies one physical deck/hand card and its source Critter instance. It references
-a static card definition rather than duplicating card rules.
+a static card definition rather than duplicating card rules. Defeat removes sourced card IDs from
+active zones but retains these immutable records for event and replay references.
 
 ## Temporary battle data
 
@@ -189,7 +190,7 @@ Run 4B validation adds:
 - `INVALID_CARD_EFFECTS`, `INVALID_CARD_EFFECT`, `INVALID_EFFECT_KIND`
 - `INVALID_EFFECT_AMOUNT`, `INVALID_STATUS_ID`, `INVALID_STATUS_MAGNITUDE`,
   `INVALID_STATUS_DURATION`
-- `INVALID_TARGET_COUNT` for derived and single-target rules
+- `INVALID_TARGET_COUNT` for automatic and manual targeting rules
 
 ## Versioning
 

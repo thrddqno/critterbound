@@ -54,6 +54,25 @@ return function(Harness)
 		return result
 	end
 
+	local function activeCardIds(teamState)
+		local result = {}
+		for _, zone in
+			{
+				teamState.drawPileCardInstanceIds,
+				teamState.handCardInstanceIds,
+				teamState.discardCardInstanceIds,
+			}
+		do
+			for _, cardId in zone do
+				result[cardId] = true
+			end
+		end
+		for _, queued in teamState.queuedCards do
+			result[queued.cardInstanceId] = true
+		end
+		return result
+	end
+
 	Harness.test("higher Speed acts first and defeated Critters lose pending actions", function()
 		local state = Fixtures.createState()
 		Fixtures.findCombatant(state, "combatant:t2:s1").currentHealth = 10
@@ -97,6 +116,74 @@ return function(Harness)
 		Harness.equal(result.value.state.phase, "PLANNING")
 	end)
 
+	Harness.test("defeat retires source cards from every active zone before draw", function()
+		local state = Fixtures.createState()
+		Fixtures.findCombatant(state, "combatant:t2:s1").currentHealth = 10
+		Fixtures.makeCard(state, "attacker", Fixtures.CardDefinitions.Attack.id, "combatant:t1:s2")
+		Fixtures.queue(state, "team.1", "attacker", "combatant:t1:s2", {})
+
+		local retiredIds = { "dead.draw", "dead.hand", "dead.discard", "dead.queued" }
+		for _, cardId in retiredIds do
+			Fixtures.makeCard(state, cardId, Fixtures.CardDefinitions.Attack.id, "combatant:t2:s1")
+		end
+		local enemyState = Fixtures.findTeamState(state, "team.2")
+		enemyState.drawPileCardInstanceIds = { "survivor.draw", "dead.draw" }
+		enemyState.handCardInstanceIds = { "dead.hand", "survivor.hand", "dead.queued" }
+		enemyState.discardCardInstanceIds = { "survivor.discard", "dead.discard" }
+		Fixtures.queue(state, "team.2", "dead.queued", "combatant:t2:s1", {})
+
+		local result = resolve(state)
+		Harness.expect(result.ok)
+		Harness.equal(canceledReasons(result.value.events)["dead.queued"], "DEFEATED")
+		local resolvedEnemyState = Fixtures.findTeamState(result.value.state, "team.2")
+		local active = activeCardIds(resolvedEnemyState)
+		for _, cardId in retiredIds do
+			Harness.expect(not active[cardId])
+		end
+		Harness.expect(active["survivor.draw"])
+		Harness.expect(active["survivor.hand"])
+		Harness.expect(active["survivor.discard"])
+		Harness.equal(
+			#resolvedEnemyState.drawPileCardInstanceIds
+				+ #resolvedEnemyState.handCardInstanceIds
+				+ #resolvedEnemyState.discardCardInstanceIds,
+			3
+		)
+		Harness.expect(Fixtures.indexById(result.value.state.cardInstances)["dead.draw"] ~= nil)
+	end)
+
+	Harness.test("poison defeat retires cards before next-round draw", function()
+		local state = Fixtures.createState()
+		local target = Fixtures.findCombatant(state, "combatant:t2:s1")
+		target.currentHealth = 5
+		target.statusEffects = {
+			{
+				id = "poison.retire",
+				statusId = "POISON",
+				sourceCombatantId = "combatant:t1:s3",
+				targetCombatantId = target.id,
+				magnitude = 5,
+				duration = 1,
+				stackCount = 1,
+				appliedRound = 1,
+				expiresAtRound = 1,
+			},
+		}
+		Fixtures.makeCard(
+			state,
+			"poison.dead.card",
+			Fixtures.CardDefinitions.Attack.id,
+			"combatant:t2:s1"
+		)
+		Fixtures.findTeamState(state, "team.2").drawPileCardInstanceIds = { "poison.dead.card" }
+
+		local result = resolve(state)
+		Harness.expect(result.ok)
+		Harness.expect(
+			not activeCardIds(Fixtures.findTeamState(result.value.state, "team.2"))["poison.dead.card"]
+		)
+	end)
+
 	Harness.test("multiple queued cards execute consecutively in selected order", function()
 		local state = Fixtures.createState()
 		Fixtures.makeCard(
@@ -123,7 +210,7 @@ return function(Harness)
 				table.insert(damageTargets, event.payload.targetCombatantId)
 			end
 		end
-		Harness.deepEqual(damageTargets, { "combatant:t2:s1", "combatant:t2:s2" })
+		Harness.deepEqual(damageTargets, { "combatant:t2:s1", "combatant:t2:s1" })
 	end)
 
 	Harness.test("Speed changes affect next round initiative, not the current queue", function()
@@ -178,6 +265,29 @@ return function(Harness)
 		)
 	end)
 
+	Harness.test("earlier Speed effects change later automatic ENEMY targeting", function()
+		local state = Fixtures.createState()
+		Fixtures.makeCard(
+			state,
+			"card.speed.first",
+			Fixtures.CardDefinitions.SpeedUp.id,
+			"combatant:t2:s1"
+		)
+		Fixtures.queue(state, "team.2", "card.speed.first", "combatant:t2:s1", {})
+		Fixtures.makeCard(
+			state,
+			"card.attack.second",
+			Fixtures.CardDefinitions.Attack.id,
+			"combatant:t1:s1"
+		)
+		Fixtures.queue(state, "team.1", "card.attack.second", "combatant:t1:s1", {})
+
+		local result = resolve(state)
+		Harness.expect(result.ok)
+		local damage = findEvent(result.value.events, "DAMAGE_APPLIED")
+		Harness.equal(damage.payload.targetCombatantId, "combatant:t2:s3")
+	end)
+
 	Harness.test("last enemy defeat completes the match and cancels remaining actions", function()
 		local state = Fixtures.createState()
 		for _, combatantId in { "combatant:t2:s1", "combatant:t2:s2", "combatant:t2:s3" } do
@@ -220,6 +330,43 @@ return function(Harness)
 		Harness.equal(reasons["card.tide.1"], "MATCH_COMPLETED")
 		Harness.equal(reasons["card.stone.1"], "MATCH_COMPLETED")
 		Harness.equal(findEvent(result.value.events, "ROUND_COMPLETED"), nil)
+	end)
+
+	Harness.test("terminal resolution retires every defeated Critter card", function()
+		local state = Fixtures.createState()
+		Fixtures.findCombatant(state, "combatant:t2:s1").currentHealth = 10
+		Fixtures.findCombatant(state, "combatant:t2:s2").currentHealth = 0
+		Fixtures.findCombatant(state, "combatant:t2:s3").currentHealth = 0
+		Fixtures.makeCard(
+			state,
+			"terminal.attack",
+			Fixtures.CardDefinitions.Attack.id,
+			"combatant:t1:s2"
+		)
+		Fixtures.queue(state, "team.1", "terminal.attack", "combatant:t1:s2", {})
+
+		local retiredBySource = {
+			{ "terminal.draw", "combatant:t2:s1" },
+			{ "terminal.hand", "combatant:t2:s2" },
+			{ "terminal.discard", "combatant:t2:s3" },
+		}
+		for _, value in retiredBySource do
+			Fixtures.makeCard(state, value[1], Fixtures.CardDefinitions.Attack.id, value[2])
+		end
+		local enemyState = Fixtures.findTeamState(state, "team.2")
+		enemyState.drawPileCardInstanceIds = { "terminal.draw" }
+		enemyState.handCardInstanceIds = { "terminal.hand" }
+		enemyState.discardCardInstanceIds = { "terminal.discard" }
+		Fixtures.queue(state, "team.2", "terminal.draw", "combatant:t2:s1", {})
+
+		local result = resolve(state)
+		Harness.expect(result.ok)
+		Harness.equal(result.value.state.phase, "COMPLETED")
+		local active = activeCardIds(Fixtures.findTeamState(result.value.state, "team.2"))
+		for _, value in retiredBySource do
+			Harness.expect(not active[value[1]])
+		end
+		Harness.equal(canceledReasons(result.value.events)["terminal.draw"], "MATCH_COMPLETED")
 	end)
 
 	Harness.test("simultaneous poison defeat produces a draw", function()
@@ -344,6 +491,8 @@ return function(Harness)
 
 	Harness.test("a fast shield protects a target from a slower attack", function()
 		local state = Fixtures.createState()
+		Fixtures.findCombatant(state, "combatant:t2:s2").stats.speed = 5
+		Fixtures.findCombatant(state, "combatant:t1:s1").stats.speed = 4
 		Fixtures.makeCard(
 			state,
 			"card.shield.1",

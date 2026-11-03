@@ -5,13 +5,20 @@
 -- Rules:
 --   SELF         -> the source combatant while alive.
 --   ALLY         -> the submitted living ally; otherwise lowest-slot living ally (not self).
---   ENEMY        -> the submitted living enemy; otherwise lowest-slot living enemy.
+--   ENEMY        -> living enemy with lowest effective Speed, then slot and ID.
 --   FRONT_ENEMY  -> lowest-slot living enemy; submitted targets are ignored.
 --   ALL_ALLIES   -> every living ally ordered by slot.
 --   ALL_ENEMIES  -> every living enemy ordered by slot.
 --   ANY          -> the submitted living target; otherwise skipped.
 --
 -- If no legal target exists the effect is skipped. A skipped card still consumes its turn.
+
+local function requireSibling(name: string)
+	if script ~= nil then
+		return require((script.Parent :: any)[name])
+	end
+	return require(`./{name}`)
+end
 
 export type Resolution = {
 	targetIds: { string },
@@ -23,6 +30,8 @@ local MULTI_RULES: { [string]: boolean } = {
 	ALL_ALLIES = true,
 	ALL_ENEMIES = true,
 }
+
+local StatusEffects = requireSibling("StatusEffects")
 
 local function isAlive(combatant): boolean
 	return combatant ~= nil and combatant.currentHealth > 0
@@ -42,6 +51,27 @@ local function livingBySlot(combatantsById, teamId: string?): { any }
 		return a.id < b.id
 	end)
 	return living
+end
+
+local function slowestLivingEnemy(combatantsById, sourceTeamId: string)
+	local enemies = {}
+	for _, combatant in combatantsById do
+		if isAlive(combatant) and combatant.teamId ~= sourceTeamId then
+			table.insert(enemies, combatant)
+		end
+	end
+	table.sort(enemies, function(a, b)
+		local aSpeed = StatusEffects.effectiveSpeed(a)
+		local bSpeed = StatusEffects.effectiveSpeed(b)
+		if aSpeed ~= bSpeed then
+			return aSpeed < bSpeed
+		end
+		if a.slot ~= b.slot then
+			return a.slot < b.slot
+		end
+		return a.id < b.id
+	end)
+	return enemies[1]
 end
 
 local function resolve(
@@ -102,13 +132,9 @@ local function resolve(
 	end
 
 	if rule == "ENEMY" then
-		if isAlive(submitted) and submitted.teamId ~= sourceCombatant.teamId then
-			return { targetIds = { submitted.id }, retargeted = false, skipped = false }
-		end
-		for _, combatant in livingBySlot(combatantsById, nil) do
-			if combatant.teamId ~= sourceCombatant.teamId then
-				return { targetIds = { combatant.id }, retargeted = true, skipped = false }
-			end
+		local target = slowestLivingEnemy(combatantsById, sourceCombatant.teamId)
+		if target ~= nil then
+			return { targetIds = { target.id }, retargeted = false, skipped = false }
 		end
 		return { targetIds = {}, retargeted = false, skipped = true }
 	end
