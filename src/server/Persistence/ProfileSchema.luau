@@ -9,14 +9,23 @@ local function requireShared(folder: string, name: string)
 	return require(`../../shared/{folder}/{name}`)
 end
 
+local function requireServer(folder: string, name: string)
+	if script ~= nil then
+		return require(script.Parent.Parent[folder][name])
+	end
+	return require(`../{folder}/{name}`)
+end
+
 local InventoryValidator = requireShared("Validation", "InventoryValidator")
 local TeamValidator = requireShared("Validation", "TeamValidator")
 local ItemRegistry = requireShared("Items", "ItemRegistry")
 local GenomeValidator = requireShared("Genetics", "GenomeValidator")
+local GeneRegistry = requireShared("Genetics", "GeneRegistry")
+local ConceptionRng = requireServer("Genetics", "ConceptionRng")
 local ContractCatalog = requireShared("Definitions", "ContractCatalog")
 local AcquisitionPools = requireShared("Definitions", "AcquisitionPools")
 
-local CURRENT_VERSION = 8
+local CURRENT_VERSION = 9
 local MAX_OWNED_CRITTERS = 500
 local MAX_ACQUISITION_OPERATIONS = 128
 local MAX_ACQUISITION_SEED = 2147483646
@@ -70,6 +79,84 @@ local function arrayLength(value: any): number?
 		maximum = math.max(maximum, key)
 	end
 	return if count == maximum then count else nil
+end
+
+local function validateGeneticsMetadata(metadata: any, parentIds: any, path: string)
+	local parentCount = arrayLength(parentIds)
+	if
+		type(metadata) ~= "table"
+		or metadata.geneticsMode ~= "CLASSIC_INHERITANCE_V1"
+		or metadata.classInheritancePolicyVersion ~= 1
+		or metadata.inheritancePolicyVersion ~= 1
+		or metadata.mutationPolicyVersion ~= 1
+		or type(metadata.mutationEnabled) ~= "boolean"
+		or metadata.geneContentVersion ~= 1
+		or metadata.expressionVersion ~= 1
+		or not isInteger(metadata.conceptionSeed, 1)
+		or metadata.conceptionSeed > 2_147_483_646
+		or type(metadata.outcomeDigest) ~= "string"
+		or string.match(metadata.outcomeDigest, "^g1:%x%x%x%x%x%x%x%x$") == nil
+		or parentCount ~= 2
+		or not isIdentifier(parentIds[1])
+		or not isIdentifier(parentIds[2])
+		or parentIds[1] >= parentIds[2]
+	then
+		return failure("INVALID_GENETICS_METADATA", "Genetics metadata is malformed", path)
+	end
+	local trace = metadata.mutationTrace
+	local traceCount = if type(trace) == "table" then arrayLength(trace.entries) else nil
+	if
+		type(trace) ~= "table"
+		or (trace.outcome ~= "DISABLED" and trace.outcome ~= "NO_MUTATIONS" and trace.outcome ~= "MUTATED")
+		or not isInteger(trace.mutationCount, 0)
+		or trace.mutationCount > 22
+		or trace.eligiblePositionCount ~= 22
+		or traceCount == nil
+		or traceCount ~= trace.mutationCount
+		or traceCount > 22
+		or (metadata.mutationEnabled and ((trace.mutationCount == 0 and trace.outcome ~= "NO_MUTATIONS") or (trace.mutationCount > 0 and trace.outcome ~= "MUTATED")))
+		or (
+			not metadata.mutationEnabled
+			and (trace.outcome ~= "DISABLED" or trace.mutationCount ~= 0)
+		)
+	then
+		return failure(
+			"INVALID_MUTATION_TRACE",
+			"Mutation trace is malformed",
+			`{path}.mutationTrace`
+		)
+	end
+	for index, entry in trace.entries do
+		local previous = if type(entry) == "table"
+			then GeneRegistry.get(entry.previousGeneId)
+			else nil
+		local replacement = if type(entry) == "table"
+			then GeneRegistry.get(entry.newGeneId)
+			else nil
+		if
+			type(entry) ~= "table"
+			or (entry.layer ~= "APPEARANCE" and entry.layer ~= "ABILITY")
+			or type(entry.locus) ~= "string"
+			or (entry.position ~= "R1" and entry.position ~= "R2")
+			or not isIdentifier(entry.previousGeneId)
+			or not isIdentifier(entry.newGeneId)
+			or entry.outcome ~= "MUTATED"
+			or previous == nil
+			or replacement == nil
+			or previous.kind ~= entry.layer
+			or replacement.kind ~= entry.layer
+			or previous.slot ~= entry.locus
+			or replacement.slot ~= entry.locus
+			or entry.previousGeneId == entry.newGeneId
+		then
+			return failure(
+				"INVALID_MUTATION_TRACE",
+				"Mutation trace entry is malformed",
+				`{path}.mutationTrace.entries[{index}]`
+			)
+		end
+	end
+	return nil
 end
 
 local function validStats(stats: any): boolean
@@ -191,6 +278,46 @@ local function validateInstance(instance: any, id: string, userId: number, defin
 				"INVALID_EQUIPMENT_REFERENCE",
 				"Equipment reference is invalid",
 				`ownedCritters.{id}.equipmentIds[{index}]`
+			)
+		end
+	end
+	if instance.genetics ~= nil then
+		if type(instance.genetics) ~= "table" or instance.genetics.schemaVersion ~= 1 then
+			return failure(
+				"INVALID_GENETICS_METADATA",
+				"Critter genetics metadata is malformed",
+				`ownedCritters.{id}.genetics`
+			)
+		end
+		local geneticsFailure = validateGeneticsMetadata(
+			instance.genetics,
+			instance.genetics.canonicalParentIds,
+			`ownedCritters.{id}.genetics`
+		)
+		if geneticsFailure ~= nil then
+			return geneticsFailure
+		end
+		if
+			breeding.parentIds[1] ~= instance.genetics.canonicalParentIds[1]
+			or breeding.parentIds[2] ~= instance.genetics.canonicalParentIds[2]
+		then
+			return failure(
+				"INVALID_GENETICS_METADATA",
+				"Critter lineage does not match genetics metadata",
+				`ownedCritters.{id}.genetics.canonicalParentIds`
+			)
+		end
+		local expectedDigest = ConceptionRng.outcomeDigest(
+			definition.class,
+			instance.appearanceGenome,
+			instance.abilityGenome,
+			instance.genetics
+		)
+		if instance.genetics.outcomeDigest ~= expectedDigest then
+			return failure(
+				"GENETICS_DIGEST_MISMATCH",
+				"Critter genetics digest is invalid",
+				`ownedCritters.{id}.genetics.outcomeDigest`
 			)
 		end
 	end
@@ -708,7 +835,7 @@ local function validate(
 		end
 		if
 			type(egg) ~= "table"
-			or egg.schemaVersion ~= 1
+			or (egg.schemaVersion ~= 1 and egg.schemaVersion ~= 2)
 			or egg.eggId ~= eggId
 			or egg.ownerUserId ~= expectedUserId
 			or not isIdentifier(egg.parentAId)
@@ -738,6 +865,23 @@ local function validate(
 				`eggs.{eggId}.offspringClass`
 			)
 		end
+		if egg.schemaVersion == 2 then
+			local geneticsFailure =
+				validateGeneticsMetadata(egg, egg.canonicalParentIds, `eggs.{eggId}`)
+			if geneticsFailure ~= nil then
+				return geneticsFailure
+			end
+			if
+				egg.parentAId ~= egg.canonicalParentIds[1]
+				or egg.parentBId ~= egg.canonicalParentIds[2]
+			then
+				return failure(
+					"INVALID_GENETICS_METADATA",
+					"Egg parents are not canonical",
+					`eggs.{eggId}.canonicalParentIds`
+				)
+			end
+		end
 		local genomeValidation = GenomeValidator.validate(
 			egg.offspringAppearanceGenome,
 			egg.offspringAbilityGenome,
@@ -752,6 +896,21 @@ local function validate(
 					then `eggs.{eggId}`
 					else `eggs.{eggId}.{genomeError.path}`
 			)
+		end
+		if egg.schemaVersion == 2 then
+			local expectedDigest = ConceptionRng.outcomeDigest(
+				egg.offspringClass,
+				egg.offspringAppearanceGenome,
+				egg.offspringAbilityGenome,
+				egg
+			)
+			if egg.outcomeDigest ~= expectedDigest then
+				return failure(
+					"GENETICS_DIGEST_MISMATCH",
+					"Egg genetics digest is invalid",
+					`eggs.{eggId}.outcomeDigest`
+				)
+			end
 		end
 		if
 			egg.hatchedAt ~= nil

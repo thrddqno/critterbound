@@ -60,17 +60,14 @@ return function(Harness)
 		Harness.deepEqual(result.abilityGenome.slots.traits, original.abilityGenome.slots.traits)
 	end
 
-	Harness.test(
-		"mutation policy defaults disabled at the proposed ten-percent test rate",
-		function()
-			Harness.equal(MutationPolicy.Default.version, "MUTATION_POLICY_V1")
-			Harness.equal(MutationPolicy.Default.enabled, false)
-			Harness.equal(MutationPolicy.Default.probabilityNumerator, 1)
-			Harness.equal(MutationPolicy.Default.probabilityDenominator, 10)
-			Harness.equal(MutationEngine.EligiblePositionCount, 22)
-			Harness.equal(MutationEngine.MaxTraceEntries, 22)
-		end
-	)
+	Harness.test("mutation policy defaults disabled at the two-percent production rate", function()
+		Harness.equal(MutationPolicy.Default.version, "MUTATION_POLICY_V1")
+		Harness.equal(MutationPolicy.Default.enabled, false)
+		Harness.equal(MutationPolicy.Default.probabilityNumerator, 2)
+		Harness.equal(MutationPolicy.Default.probabilityDenominator, 100)
+		Harness.equal(MutationEngine.EligiblePositionCount, 22)
+		Harness.equal(MutationEngine.MaxTraceEntries, 22)
+	end)
 
 	Harness.test(
 		"disabled policy returns identical genomes without consuming mutation RNG",

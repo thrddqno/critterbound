@@ -3,6 +3,8 @@
 local BreedingService = {}
 
 local MAX_OPERATION_RECORDS = 64
+local LEGACY_INHERITANCE = "LEGACY_INHERITANCE"
+local CLASSIC_INHERITANCE_V1 = "CLASSIC_INHERITANCE_V1"
 
 local function clone(value)
 	if type(value) ~= "table" then
@@ -38,10 +40,44 @@ local function integer(value)
 		and value % 1 == 0
 end
 
+local function canonicalParents(parentAId: string, parentBId: string)
+	if parentAId <= parentBId then
+		return parentAId, parentBId
+	end
+	return parentBId, parentAId
+end
+
+local function sameParents(
+	firstA: string,
+	firstB: string,
+	secondA: string,
+	secondB: string
+): boolean
+	local canonicalFirstA, canonicalFirstB = canonicalParents(firstA, firstB)
+	local canonicalSecondA, canonicalSecondB = canonicalParents(secondA, secondB)
+	return canonicalFirstA == canonicalSecondA and canonicalFirstB == canonicalSecondB
+end
+
+local function compactMutationTrace(trace)
+	local entries = {}
+	for _, entry in trace.entries do
+		if entry.outcome == "MUTATED" then
+			table.insert(entries, clone(entry))
+		end
+	end
+	return {
+		outcome = trace.outcome,
+		mutationCount = trace.mutationCount,
+		eligiblePositionCount = trace.eligiblePositionCount,
+		entries = entries,
+	}
+end
+
 local function new(dependencies)
 	local deps = dependencies
 	local activeMutation = {}
 	local service = {}
+	local geneticsConfig = deps.geneticsConfig or { mode = LEGACY_INHERITANCE }
 
 	local function readProfile(userId)
 		return deps.profileService.ReadProfile(userId)
@@ -118,8 +154,11 @@ local function new(dependencies)
 			eligible = true,
 			errors = {},
 			possibleOffspringClasses = possible,
-			mutationEnabled = false,
-			inheritanceRules = "Each of 36 allele positions independently chooses parent A or B, then D/R1/R2 with 75/20/5 weights.",
+			mutationEnabled = geneticsConfig.mode == CLASSIC_INHERITANCE_V1
+				and geneticsConfig.mutationEnabled == true,
+			inheritanceRules = if geneticsConfig.mode == CLASSIC_INHERITANCE_V1
+				then "Classic v1: each of 36 positions independently selects a parent and D/R1/R2 at 75/18.75/6.25 weights."
+				else "Each of 36 allele positions independently chooses parent A or B, then D/R1/R2 with 75/20/5 weights.",
 		})
 	end
 
@@ -133,6 +172,28 @@ local function new(dependencies)
 		if parentAId == parentBId then
 			return failure("SAME_PARENT", "Parents must be different Critters")
 		end
+		parentAId, parentBId = canonicalParents(parentAId, parentBId)
+		if
+			geneticsConfig.mode ~= LEGACY_INHERITANCE
+			and geneticsConfig.mode ~= CLASSIC_INHERITANCE_V1
+		then
+			return failure("INVALID_GENETICS_CONFIG", "Server genetics configuration is invalid")
+		end
+		if
+			geneticsConfig.mode == CLASSIC_INHERITANCE_V1
+			and (
+				geneticsConfig.classInheritancePolicyVersion ~= 1
+				or geneticsConfig.inheritancePolicyVersion ~= 1
+				or geneticsConfig.mutationPolicyVersion ~= 1
+				or type(geneticsConfig.mutationEnabled) ~= "boolean"
+				or geneticsConfig.mutationProbabilityNumerator ~= 2
+				or geneticsConfig.mutationProbabilityDenominator ~= 100
+				or geneticsConfig.geneContentVersion ~= 1
+				or geneticsConfig.expressionVersion ~= 1
+			)
+		then
+			return failure("INVALID_GENETICS_CONFIG", "Server genetics configuration is invalid")
+		end
 
 		local profileResult = readProfile(userId)
 		if not profileResult.ok then
@@ -143,8 +204,12 @@ local function new(dependencies)
 			and profile.breedingOperationsById[commandId]
 		if existingOperation ~= nil then
 			if
-				existingOperation.parentAId ~= parentAId
-				or existingOperation.parentBId ~= parentBId
+				not sameParents(
+					existingOperation.parentAId,
+					existingOperation.parentBId,
+					parentAId,
+					parentBId
+				)
 			then
 				return failure(
 					"COMMAND_ID_CONFLICT",
@@ -163,7 +228,9 @@ local function new(dependencies)
 		end
 		local durableEgg = findEggByCommand(profile, commandId)
 		if durableEgg ~= nil then
-			if durableEgg.parentAId ~= parentAId or durableEgg.parentBId ~= parentBId then
+			if
+				not sameParents(durableEgg.parentAId, durableEgg.parentBId, parentAId, parentBId)
+			then
 				return failure(
 					"COMMAND_ID_CONFLICT",
 					"Command ID was used for another breeding operation"
@@ -187,12 +254,57 @@ local function new(dependencies)
 		local lockToken = lockResult.value.token
 		activeMutation[userId] = lockToken
 		local ok, result = pcall(function()
-			local rngResult = deps.rng.new(deps.rngSeed())
-			if not rngResult.ok then
-				return rngResult
+			local rngState = nil
+			if geneticsConfig.mode == LEGACY_INHERITANCE then
+				local rngResult = deps.rng.new(deps.rngSeed())
+				if not rngResult.ok then
+					return rngResult
+				end
+				rngState = rngResult.value
 			end
-			local rngState = rngResult.value
 			local mutationResult = deps.profileService.UpdateProfile(userId, function(candidate)
+				local candidateOperation = candidate.breedingOperationsById
+					and candidate.breedingOperationsById[commandId]
+				if candidateOperation ~= nil then
+					if
+						not sameParents(
+							candidateOperation.parentAId,
+							candidateOperation.parentBId,
+							parentAId,
+							parentBId
+						)
+					then
+						return failure(
+							"COMMAND_ID_CONFLICT",
+							"Command ID was used for another breeding operation"
+						)
+					end
+					local existingEgg = candidate.eggs[candidateOperation.eggId]
+					if existingEgg == nil then
+						return failure(
+							"BREEDING_OPERATION_CORRUPT",
+							"Recorded breeding result is missing"
+						)
+					end
+					return success({ egg = clone(existingEgg), duplicate = true })
+				end
+				local candidateDurableEgg = findEggByCommand(candidate, commandId)
+				if candidateDurableEgg ~= nil then
+					if
+						not sameParents(
+							candidateDurableEgg.parentAId,
+							candidateDurableEgg.parentBId,
+							parentAId,
+							parentBId
+						)
+					then
+						return failure(
+							"COMMAND_ID_CONFLICT",
+							"Command ID was used for another breeding operation"
+						)
+					end
+					return success({ egg = clone(candidateDurableEgg), duplicate = true })
+				end
 				if candidate.revision ~= expectedRevision then
 					return failure("STALE_REVISION", "Profile revision is stale")
 				end
@@ -210,15 +322,6 @@ local function new(dependencies)
 				local parentB = candidate.ownedCritters[parentBId]
 				local classA = deps.catalog.getById(parentA.definitionId).class
 				local classB = deps.catalog.getById(parentB.definitionId).class
-				local offspringClass
-				if classA == classB then
-					offspringClass = classA
-				else
-					local roll
-					rngState, roll = deps.rng.nextInteger(rngState, 1, 2)
-					offspringClass = if roll == 1 then classA else classB
-				end
-
 				local parentAData = {
 					class = classA,
 					appearanceGenome = clone(parentA.appearanceGenome),
@@ -229,16 +332,120 @@ local function new(dependencies)
 					appearanceGenome = clone(parentB.appearanceGenome),
 					abilityGenome = clone(parentB.abilityGenome),
 				}
-				local inherited = deps.inheritanceEngine.inherit(
-					parentAData,
-					parentBData,
-					offspringClass,
-					rngState
-				)
-				if not inherited.ok then
-					return inherited
+				local offspringClass
+				local appearanceGenome
+				local abilityGenome
+				local classicMetadata = nil
+				if geneticsConfig.mode == CLASSIC_INHERITANCE_V1 then
+					local conceptionSeed = deps.conceptionSeed()
+					if not deps.conceptionRng.validSeed(conceptionSeed) then
+						return failure(
+							"INVALID_CONCEPTION_SEED",
+							"Authoritative conception seed is invalid"
+						)
+					end
+					local classSeed = deps.conceptionRng.derive(
+						conceptionSeed,
+						parentAId,
+						parentBId,
+						geneticsConfig,
+						"CLASS"
+					)
+					local inheritanceSeed = deps.conceptionRng.derive(
+						conceptionSeed,
+						parentAId,
+						parentBId,
+						geneticsConfig,
+						"RECOMBINATION"
+					)
+					local mutationSeed = deps.conceptionRng.derive(
+						conceptionSeed,
+						parentAId,
+						parentBId,
+						geneticsConfig,
+						"MUTATION"
+					)
+					local classResult =
+						deps.classInheritancePolicy.resolve(classA, classB, classSeed)
+					if not classResult.ok then
+						return classResult
+					end
+					offspringClass = classResult.value.class
+					local inherited = deps.inheritanceEngine.inheritWithPolicy(
+						CLASSIC_INHERITANCE_V1,
+						parentAData,
+						parentBData,
+						offspringClass,
+						inheritanceSeed,
+						{ contentVersion = geneticsConfig.geneContentVersion }
+					)
+					if not inherited.ok then
+						return inherited
+					end
+					local mutated = deps.mutationEngine.mutate(
+						inherited.value.appearanceGenome,
+						inherited.value.abilityGenome,
+						offspringClass,
+						mutationSeed,
+						{
+							version = deps.mutationPolicy.Version,
+							enabled = geneticsConfig.mutationEnabled,
+							probabilityNumerator = geneticsConfig.mutationProbabilityNumerator,
+							probabilityDenominator = geneticsConfig.mutationProbabilityDenominator,
+						}
+					)
+					if not mutated.ok then
+						return mutated
+					end
+					appearanceGenome = mutated.value.appearanceGenome
+					abilityGenome = mutated.value.abilityGenome
+					local expression = deps.genotypeExpressor.express(
+						appearanceGenome,
+						abilityGenome,
+						offspringClass,
+						geneticsConfig.geneContentVersion
+					)
+					if not expression.ok then
+						return expression
+					end
+					classicMetadata = {
+						geneticsMode = CLASSIC_INHERITANCE_V1,
+						classInheritancePolicyVersion = 1,
+						inheritancePolicyVersion = geneticsConfig.inheritancePolicyVersion,
+						mutationPolicyVersion = geneticsConfig.mutationPolicyVersion,
+						mutationEnabled = geneticsConfig.mutationEnabled,
+						geneContentVersion = geneticsConfig.geneContentVersion,
+						expressionVersion = geneticsConfig.expressionVersion,
+						conceptionSeed = conceptionSeed,
+						canonicalParentIds = { parentAId, parentBId },
+						mutationTrace = compactMutationTrace(mutated.value.trace),
+					}
+					classicMetadata.outcomeDigest = deps.conceptionRng.outcomeDigest(
+						offspringClass,
+						appearanceGenome,
+						abilityGenome,
+						classicMetadata
+					)
+				else
+					if classA == classB then
+						offspringClass = classA
+					else
+						local roll
+						rngState, roll = deps.rng.nextInteger(rngState, 1, 2)
+						offspringClass = if roll == 1 then classA else classB
+					end
+					local inherited = deps.inheritanceEngine.inherit(
+						parentAData,
+						parentBData,
+						offspringClass,
+						rngState
+					)
+					if not inherited.ok then
+						return inherited
+					end
+					appearanceGenome = inherited.value.appearanceGenome
+					abilityGenome = inherited.value.abilityGenome
 				end
-				rngState = inherited.value.rng
 
 				local generation = math.max(
 					parentA.breeding.generation,
@@ -247,20 +454,25 @@ local function new(dependencies)
 				local eggId = `egg:{deps.generateId()}`
 				local now = deps.now()
 				local egg = {
-					schemaVersion = 1,
+					schemaVersion = if classicMetadata == nil then 1 else 2,
 					eggId = eggId,
 					ownerUserId = userId,
 					parentAId = parentAId,
 					parentBId = parentBId,
 					offspringClass = offspringClass,
-					offspringAppearanceGenome = clone(inherited.value.appearanceGenome),
-					offspringAbilityGenome = clone(inherited.value.abilityGenome),
+					offspringAppearanceGenome = clone(appearanceGenome),
+					offspringAbilityGenome = clone(abilityGenome),
 					generation = generation,
 					createdAt = now,
 					hatchAt = now + deps.incubationSeconds,
 					status = "INCUBATING",
 					breedingCommandId = commandId,
 				}
+				if classicMetadata ~= nil then
+					for key, value in classicMetadata do
+						egg[key] = clone(value)
+					end
+				end
 
 				if candidate.eggs[eggId] ~= nil then
 					return failure("DUPLICATE_EGG_ID", "Generated egg ID already exists")
@@ -297,7 +509,7 @@ local function new(dependencies)
 			return success({
 				revision = updatedProfile.value.revision,
 				egg = clone(mutationResult.value.egg),
-				duplicate = false,
+				duplicate = mutationResult.value.duplicate == true,
 			})
 		end)
 		activeMutation[userId] = nil

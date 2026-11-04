@@ -34,7 +34,12 @@ local StatusEffects = require(Shared.Battle.StatusEffects)
 local DomainValidator = require(Shared.Validation.DomainValidator)
 local Server = script.Parent
 local GenomeValidator = require(Shared.Genetics.GenomeValidator)
+local GenotypeExpressor = require(Shared.Genetics.GenotypeExpressor)
 local InheritanceEngine = require(Server.Genetics.InheritanceEngine)
+local ClassInheritancePolicy = require(Server.Genetics.ClassInheritancePolicy)
+local MutationEngine = require(Server.Genetics.MutationEngine)
+local MutationPolicy = require(Server.Genetics.MutationPolicy)
+local ConceptionRng = require(Server.Genetics.ConceptionRng)
 local BreedingValidator = require(Server.Services.BreedingValidator)
 
 local function clone(value)
@@ -69,6 +74,7 @@ local ProfileRepository = require(Server.Persistence.ProfileRepository)
 local ProfileProjector = require(Server.Persistence.ProfileProjector)
 local DevelopmentConfig = require(Server.Config.DevelopmentConfig)
 local CombatConfig = require(Server.Config.CombatConfig)
+local GeneticsConfig = require(Server.Config.GeneticsConfig)
 local StudioAcquisitionFixtures = require(Server.Config.StudioAcquisitionFixtures)
 local GeneRegistry = require(Shared.Genetics.GeneRegistry)
 
@@ -146,11 +152,18 @@ local eggService = EggService.new({
 	catalog = CritterCatalog,
 	projector = ProfileProjector,
 	genomeValidator = GenomeValidator,
+	genotypeExpressor = GenotypeExpressor,
+	conceptionRng = ConceptionRng,
 	generateId = function()
 		return HttpService:GenerateGUID(false)
 	end,
 	now = os.time,
 })
+
+local activeGeneticsConfig = GeneticsConfig.Default
+if RunService:IsStudio() and DevelopmentConfig.EnableStudioClassicGeneticsAcceptance then
+	activeGeneticsConfig = GeneticsConfig.classic(true)
+end
 
 local breedingService = BreedingService.new({
 	protocolVersion = BreedingProtocol.Version,
@@ -159,9 +172,18 @@ local breedingService = BreedingService.new({
 	catalog = CritterCatalog,
 	genomeValidator = GenomeValidator,
 	inheritanceEngine = InheritanceEngine,
+	classInheritancePolicy = ClassInheritancePolicy,
+	mutationEngine = MutationEngine,
+	mutationPolicy = MutationPolicy,
+	genotypeExpressor = GenotypeExpressor,
+	conceptionRng = ConceptionRng,
+	geneticsConfig = activeGeneticsConfig,
 	rng = DeterministicRng,
 	rngSeed = function()
-		return math.floor(os.clock() * 1000000) % 2147483646 + 1
+		return ConceptionRng.hashParts({ HttpService:GenerateGUID(false), "LEGACY_BREEDING" })
+	end,
+	conceptionSeed = function()
+		return ConceptionRng.hashParts({ HttpService:GenerateGUID(false), "CLASSIC_CONCEPTION_V1" })
 	end,
 	generateId = function()
 		return HttpService:GenerateGUID(false)
@@ -169,6 +191,14 @@ local breedingService = BreedingService.new({
 	now = os.time,
 	incubationSeconds = BreedingProtocol.IncubationSeconds,
 })
+
+DevelopmentLogger.info(
+	`Genetics policy={activeGeneticsConfig.mode} mutation={tostring(
+		activeGeneticsConfig.mutationEnabled == true
+	)} rate={tostring(activeGeneticsConfig.mutationProbabilityNumerator or 0)}/{tostring(
+		activeGeneticsConfig.mutationProbabilityDenominator or 1
+	)}`
+)
 
 local acquisitionService = CritterAcquisitionService.new({
 	profileService = profileService,

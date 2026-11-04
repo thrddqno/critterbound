@@ -2,7 +2,7 @@
 
 local EggService = {}
 
-local MAX_EGGS = 500
+local MAX_OWNED_CRITTERS = 500
 
 local function clone(value)
 	if type(value) ~= "table" then
@@ -36,6 +36,14 @@ local function integer(value: any): boolean
 		and value >= 0
 		and value < math.huge
 		and value % 1 == 0
+end
+
+local function mapCount(value): number
+	local count = 0
+	for _ in value do
+		count += 1
+	end
+	return count
 end
 
 local function derivedStatus(egg: any, now: number): string
@@ -126,14 +134,53 @@ local function new(dependencies)
 		if definition == nil then
 			return nil, failure("UNKNOWN_CRITTER_DEFINITION", "Offspring definition is unknown")
 		end
+		local geneContentVersion = if egg.schemaVersion == 2 then egg.geneContentVersion else nil
+		if egg.schemaVersion == 2 then
+			if
+				egg.geneticsMode ~= "CLASSIC_INHERITANCE_V1"
+				or egg.classInheritancePolicyVersion ~= 1
+				or egg.inheritancePolicyVersion ~= 1
+				or egg.mutationPolicyVersion ~= 1
+				or egg.geneContentVersion ~= 1
+				or egg.expressionVersion ~= deps.genotypeExpressor.Version
+				or not deps.conceptionRng.validSeed(egg.conceptionSeed)
+			then
+				return nil,
+					failure(
+						"UNSUPPORTED_EGG_GENETICS_VERSION",
+						"Egg genetics metadata is unsupported"
+					)
+			end
+			local expectedDigest = deps.conceptionRng.outcomeDigest(
+				egg.offspringClass,
+				egg.offspringAppearanceGenome,
+				egg.offspringAbilityGenome,
+				egg
+			)
+			if egg.outcomeDigest ~= expectedDigest then
+				return nil, failure("GENETICS_DIGEST_MISMATCH", "Egg genetics digest is invalid")
+			end
+		end
 		local genomeValidation = deps.genomeValidator.validate(
 			egg.offspringAppearanceGenome,
 			egg.offspringAbilityGenome,
-			egg.offspringClass
+			egg.offspringClass,
+			geneContentVersion
 		)
 		if not genomeValidation.ok then
 			local genomeError = genomeValidation.errors[1]
 			return nil, failure(genomeError.code, genomeError.message)
+		end
+		if egg.schemaVersion == 2 then
+			local expression = deps.genotypeExpressor.express(
+				egg.offspringAppearanceGenome,
+				egg.offspringAbilityGenome,
+				egg.offspringClass,
+				egg.geneContentVersion
+			)
+			if not expression.ok then
+				return nil, expression
+			end
 		end
 
 		local offspringId = `critter:{deps.generateId()}`
@@ -160,6 +207,22 @@ local function new(dependencies)
 			tradable = false,
 			equipmentIds = {},
 		}
+		if egg.schemaVersion == 2 then
+			offspring.genetics = {
+				schemaVersion = 1,
+				geneticsMode = egg.geneticsMode,
+				classInheritancePolicyVersion = egg.classInheritancePolicyVersion,
+				inheritancePolicyVersion = egg.inheritancePolicyVersion,
+				mutationPolicyVersion = egg.mutationPolicyVersion,
+				mutationEnabled = egg.mutationEnabled,
+				geneContentVersion = egg.geneContentVersion,
+				expressionVersion = egg.expressionVersion,
+				conceptionSeed = egg.conceptionSeed,
+				outcomeDigest = egg.outcomeDigest,
+				canonicalParentIds = clone(egg.canonicalParentIds),
+				mutationTrace = clone(egg.mutationTrace),
+			}
+		end
 		return offspring, nil
 	end
 
@@ -295,7 +358,7 @@ local function new(dependencies)
 				if candidate.ownedCritters[offspring.id] ~= nil then
 					return failure("DUPLICATE_CRITTER_ID", "Generated Critter ID already exists")
 				end
-				if #candidate.ownedCritters >= MAX_EGGS then
+				if mapCount(candidate.ownedCritters) >= MAX_OWNED_CRITTERS then
 					return failure("CRITTER_LIMIT_EXCEEDED", "Owned Critter limit exceeded")
 				end
 

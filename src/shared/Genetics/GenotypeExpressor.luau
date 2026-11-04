@@ -20,6 +20,7 @@ local AppearanceResolver = requireGenetics("AppearanceResolver")
 local AbilityResolver = requireGenetics("AbilityResolver")
 local CritterCatalog = requireDefinition("CritterCatalog")
 local GenotypeExpressor = {}
+local EXPRESSION_VERSION = 1
 
 local ACTIVE_ABILITY_SLOTS = { "mouth", "horn", "back", "tail" }
 
@@ -121,5 +122,6 @@ local function express(
 end
 
 GenotypeExpressor.express = express
+GenotypeExpressor.Version = EXPRESSION_VERSION
 
 return table.freeze(GenotypeExpressor)

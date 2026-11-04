@@ -6,8 +6,8 @@ local POLICY_VERSION = "MUTATION_POLICY_V1"
 local DEFAULT = table.freeze({
 	version = POLICY_VERSION,
 	enabled = false,
-	probabilityNumerator = 1,
-	probabilityDenominator = 10,
+	probabilityNumerator = 2,
+	probabilityDenominator = 100,
 })
 
 return table.freeze({

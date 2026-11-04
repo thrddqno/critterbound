@@ -272,5 +272,15 @@ ProfileMigrations.DefaultHooks = table.freeze({
 		migrated.schemaVersion = 8
 		return migrated
 	end,
+	[8] = function(profile)
+		if type(profile.ownedCritters) ~= "table" or type(profile.eggs) ~= "table" then
+			error("Breeding persistence collections are corrupt")
+		end
+		-- Existing Critters and eggs remain byte-for-byte unchanged. Version 9 only permits the
+		-- optional Classic genetics metadata written by new conceptions and hatches.
+		local migrated = clone(profile)
+		migrated.schemaVersion = 9
+		return migrated
+	end,
 })
 return table.freeze(ProfileMigrations)

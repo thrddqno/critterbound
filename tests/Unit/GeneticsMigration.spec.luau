@@ -72,4 +72,22 @@ return function(Harness)
 		Harness.expect(Harness.hasError(result, "PROFILE_MIGRATION_FAILED"))
 		Harness.deepEqual(source, before)
 	end)
+
+	Harness.test("schema 8 migration preserves existing Critters and legacy eggs", function()
+		local Schema = require("../../src/server/Persistence/ProfileSchema")
+		local source = Schema.create(42, 100)
+		source.schemaVersion = 8
+		source.eggs["egg:legacy"] = {
+			schemaVersion = 1,
+			eggId = "egg:legacy",
+			marker = "unchanged",
+		}
+		local before = Harness.clone(source)
+		local result = Migrations.migrate(source, 9, Migrations.DefaultHooks)
+		Harness.expect(result.ok)
+		Harness.deepEqual(source, before)
+		Harness.equal(result.value.schemaVersion, 9)
+		Harness.deepEqual(result.value.eggs, before.eggs)
+		Harness.deepEqual(result.value.ownedCritters, before.ownedCritters)
+	end)
 end

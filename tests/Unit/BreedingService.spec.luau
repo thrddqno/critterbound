@@ -76,6 +76,8 @@ return function(Harness)
 		local revision = profileService.ReadProfile(721).value.revision
 		local first = service.Breed(721, parents[1].id, parents[2].id, "breed.durable", revision)
 		Harness.expect(first.ok)
+		Harness.equal(first.value.egg.schemaVersion, 1)
+		Harness.equal(first.value.egg.geneticsMode, nil)
 		Harness.expect(profileService.UpdateProfile(721, function(profile)
 			profile.breedingOperationsById["breed.durable"] = nil
 			for index, commandId in profile.breedingOperationOrder do
