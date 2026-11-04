@@ -34,7 +34,7 @@ local function prepare(userId: number, now: number, generateId, catalog)
 		assert(genomes ~= nil, `Missing starter genomes {className}`)
 		local id = `critter:{generateId()}`
 		table.insert(critters, {
-			schemaVersion = 2,
+			schemaVersion = 3,
 			id = id,
 			definitionId = definition.id,
 			ownerUserId = userId,

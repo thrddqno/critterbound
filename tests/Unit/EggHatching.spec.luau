@@ -56,7 +56,7 @@ return function(Harness)
 			local definition = Catalog.getByClass(className)
 			local genomes = GeneRegistry.defaultGenomes(className)
 			table.insert(critters, {
-				schemaVersion = 2,
+				schemaVersion = 3,
 				id = `critter:breedable-{counter}`,
 				definitionId = definition.id,
 				ownerUserId = userId,

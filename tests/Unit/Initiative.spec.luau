@@ -122,7 +122,7 @@ return function(Harness)
 		Harness.deepEqual(entries, before)
 	end)
 
-	local function combatEntry(id, speed, health, skill, resolve, queue)
+	local function combatEntry(id, speed, health, skill, morale, queue)
 		return {
 			combatantId = id,
 			teamIndex = 1,
@@ -130,12 +130,12 @@ return function(Harness)
 			speed = speed,
 			currentHealth = health,
 			skill = skill,
-			resolve = resolve,
+			morale = morale,
 			queuedCards = queue or { card(`card.{id}`, id, 1) },
 		}
 	end
 
-	Harness.test("combat initiative uses speed, health, skill, resolve, then id", function()
+	Harness.test("combat initiative uses speed, health, skill, morale, then id", function()
 		local speedFirst = Initiative.orderCombat({
 			combatEntry("slow", 10, 50, 9, 9),
 			combatEntry("fast", 30, 100, 1, 1),

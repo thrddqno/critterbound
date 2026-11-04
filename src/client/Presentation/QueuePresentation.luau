@@ -24,13 +24,31 @@ export type QueueGroup = {
 	entries: { QueueEntry },
 }
 
-local function group(entries: { QueueEntry }, critters: { CritterIdentity }): { QueueGroup }
+local function group(
+	entries: { QueueEntry },
+	critters: { CritterIdentity },
+	includeEmpty: boolean?
+): { QueueGroup }
 	local crittersById: { [string]: CritterIdentity } = {}
 	for _, critter in critters do
 		crittersById[critter.id] = critter
 	end
 
 	local workingGroups: { [string]: { group: QueueGroup, indexedEntries: { any } } } = {}
+	if includeEmpty then
+		for _, critter in critters do
+			workingGroups[critter.id] = {
+				group = {
+					sourceCombatantId = critter.id,
+					displayName = critter.displayName,
+					slot = critter.slot,
+					knownSource = true,
+					entries = {},
+				},
+				indexedEntries = {},
+			}
+		end
+	end
 	for index, entry in entries do
 		local sourceId = entry.card.sourceCombatantId
 		local working = workingGroups[sourceId]
@@ -78,4 +96,12 @@ local function group(entries: { QueueEntry }, critters: { CritterIdentity }): { 
 	return groups
 end
 
-return table.freeze({ group = group })
+local function slots(queueGroup: QueueGroup, capacity: number)
+	local result = {}
+	for index = 1, capacity do
+		table.insert(result, { index = index, entry = queueGroup.entries[index] })
+	end
+	return result
+end
+
+return table.freeze({ group = group, slots = slots })

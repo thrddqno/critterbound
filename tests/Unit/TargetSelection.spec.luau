@@ -34,4 +34,15 @@ return function(Harness)
 			)
 		end
 	end)
+
+	Harness.test("automatic target rules have explicit non-interactive labels", function()
+		Harness.equal(
+			TargetSelection.ruleDescription({ targetingRule = "ENEMY" }),
+			"Target: automatic enemy"
+		)
+		Harness.equal(
+			TargetSelection.ruleDescription({ targetingRule = "FRONT_ENEMY" }),
+			"Target: automatic front enemy"
+		)
+	end)
 end

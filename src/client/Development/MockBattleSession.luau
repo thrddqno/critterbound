@@ -8,30 +8,33 @@ local function requireGeneRegistry()
 end
 
 local GeneRegistry = requireGeneRegistry()
+local CombatStats = if script ~= nil
+	then require(game:GetService("ReplicatedStorage").Shared.Battle.CombatStats)
+	else require("../../shared/Battle/CombatStats")
 
 local definitions = {
 	stone = {
-		schemaVersion = 1,
+		schemaVersion = 2,
 		id = "critter.stone.bastion",
 		displayName = "Bastion",
 		class = "Stone",
-		baseStats = { maxHealth = 120, attack = 20, defense = 35, speed = 10 },
+		baseStats = { health = 52, speed = 10, skill = 2, morale = 6 },
 		abilityIds = { "stone.guard", "stone.bulwark", "stone.quake", "stone.slam" },
 	},
 	feral = {
-		schemaVersion = 1,
+		schemaVersion = 2,
 		id = "critter.feral.ravager",
 		displayName = "Ravager",
 		class = "Feral",
-		baseStats = { maxHealth = 80, attack = 42, defense = 12, speed = 30 },
+		baseStats = { health = 31, speed = 30, skill = 5, morale = 2 },
 		abilityIds = { "feral.strike", "feral.pounce", "feral.frenzy", "feral.rend" },
 	},
 	verdant = {
-		schemaVersion = 1,
+		schemaVersion = 2,
 		id = "critter.verdant.bloom",
 		displayName = "Bloom",
 		class = "Verdant",
-		baseStats = { maxHealth = 95, attack = 18, defense = 20, speed = 20 },
+		baseStats = { health = 43, speed = 20, skill = 4, morale = 5 },
 		abilityIds = { "verdant.mend", "verdant.renew", "verdant.grove", "verdant.seed" },
 	},
 }
@@ -80,13 +83,15 @@ for teamIndex = 1, 2 do
 		local genomes = GeneRegistry.defaultGenomes(definition.class)
 		assert(genomes ~= nil, `Missing mock genomes for {definition.class}`)
 		critterInstancesById[instanceId] = {
-			schemaVersion = 2,
+			schemaVersion = 3,
 			id = instanceId,
 			definitionId = definition.id,
 			ownerUserId = 100 + teamIndex,
 			appearanceGenome = genomes.appearanceGenome,
 			abilityGenome = genomes.abilityGenome,
 		}
+		local stats = table.clone(definition.baseStats)
+		stats.maxHealth = CombatStats.maxHealth(stats.health)
 		table.insert(combatants, {
 			id = combatantId,
 			critterInstanceId = instanceId,
@@ -94,8 +99,8 @@ for teamIndex = 1, 2 do
 			slot = slot,
 			class = definition.class,
 			abilityIds = definition.abilityIds,
-			stats = definition.baseStats,
-			currentHealth = definition.baseStats.maxHealth - (slot - 1) * 5,
+			stats = stats,
+			currentHealth = stats.maxHealth - (slot - 1) * 5,
 			statusEffects = {},
 		})
 		table.insert(combatantIds, combatantId)
@@ -106,15 +111,13 @@ end
 local cardInstancesById = {}
 local handIds = {}
 for _, key in { "stone", "feral", "verdant" } do
-	for copy = 1, 2 do
-		local id = `hand.{key}.{copy}`
-		cardInstancesById[id] = {
-			id = id,
-			definitionId = cardDefinitions[key].id,
-			sourceCritterInstanceId = `owned.team1.{key}`,
-		}
-		table.insert(handIds, id)
-	end
+	local id = `hand.{key}`
+	cardInstancesById[id] = {
+		id = id,
+		definitionId = cardDefinitions[key].id,
+		sourceCritterInstanceId = `owned.team1.{key}`,
+	}
+	table.insert(handIds, id)
 end
 
 local function byId(values)
@@ -145,11 +148,20 @@ local function createSnapshot()
 			id = "battle.presentation.demo",
 			rngSeed = 3001,
 			phase = "PLANNING",
+			planningDeadline = 45,
 			roundNumber = 1,
 			teams = teams,
 			combatants = combatants,
 			teamRoundStates = {
-				{ teamId = "team.1", energy = 3, handCardInstanceIds = handIds, committed = false },
+				{
+					teamId = "team.1",
+					energy = 3,
+					handCardInstanceIds = handIds,
+					handCount = 3,
+					drawPileCount = 9,
+					discardCount = 0,
+					committed = false,
+				},
 				{ teamId = "team.2", energy = 3, handCardInstanceIds = {}, committed = false },
 			},
 		},

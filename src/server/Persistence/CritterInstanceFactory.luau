@@ -105,7 +105,7 @@ local function new(dependencies)
 		return {
 			ok = true,
 			value = {
-				schemaVersion = 2,
+				schemaVersion = 3,
 				id = input.id,
 				definitionId = definition.id,
 				ownerUserId = input.ownerUserId,

@@ -12,6 +12,9 @@ export type Props = {
 	selectableTargetIds: { string }?,
 	activeCombatantIds: { string }?,
 	animationCommandsByCritterId: { [string]: any }?,
+	actingCombatantId: string?,
+	targetedCombatantIds: { string }?,
+	feedbackByCombatantId: { [string]: any }?,
 	onCritterSelected: ((string) -> ())?,
 }
 
@@ -19,6 +22,7 @@ function BattlefieldView.mount(parent: Instance, props: Props)
 	local root = Instance.new("Frame")
 	root.Name = "BattlefieldView"
 	root.BackgroundColor3 = Theme.Background
+	root.BackgroundTransparency = 0.28
 	root.BorderSizePixel = 0
 	root.Parent = parent
 
@@ -47,15 +51,26 @@ function BattlefieldView.mount(parent: Instance, props: Props)
 		for _, id in nextProps.activeCombatantIds or {} do
 			active[id] = true
 		end
+		local targeted = {}
+		for _, id in nextProps.targetedCombatantIds or {} do
+			targeted[id] = true
+		end
 		local usedTeams = {}
 		local usedCritters = {}
-		for teamIndex, team in nextProps.teams do
+		local orderedTeams = table.clone(nextProps.teams)
+		table.sort(orderedTeams, function(a, b)
+			if a.side ~= b.side then
+				return a.side == "ENEMY"
+			end
+			return a.id < b.id
+		end)
+		for teamIndex, team in orderedTeams do
 			usedTeams[team.id] = true
-			local labelWidth = if nextProps.compact then 84 else 108
+			local labelWidth = if nextProps.compact then 72 else 84
 			local row = rows[team.id]
 			if row == nil then
 				local frame = Instance.new("Frame")
-				frame.BorderSizePixel = 1
+				frame.BorderSizePixel = 0
 				frame.Parent = root
 				local label = Instance.new("TextLabel")
 				label.Name = "TeamLabel"
@@ -77,17 +92,18 @@ function BattlefieldView.mount(parent: Instance, props: Props)
 				rows[team.id] = row
 			end
 			row.frame.Name = if team.side == "ALLY" then "PlayerTeam" else "EnemyTeam"
-			row.frame.BackgroundColor3 = Theme.Panel
-			row.frame.BorderColor3 = if team.side == "ALLY" then Theme.Ally else Theme.Enemy
+			row.frame.BackgroundTransparency = 1
 			row.frame.Size = UDim2.new(1, 0, 0.5, -3)
 			row.frame.Position =
 				UDim2.new(0, 0, (teamIndex - 1) * 0.5, if teamIndex == 1 then 0 else 3)
 			row.label.BackgroundColor3 = if team.side == "ALLY" then Theme.Ally else Theme.Enemy
-			row.label.Size = UDim2.new(0, labelWidth, 1, 0)
-			row.label.Text = `{if team.side == "ALLY" then "PLAYER" else "ENEMY"}\nTEAM\n{team.id}`
-			row.label.TextSize = if nextProps.compact then 11 else 13
-			row.host.Position = UDim2.fromOffset(labelWidth + 4, 3)
-			row.host.Size = UDim2.new(1, -labelWidth - 7, 1, -6)
+			row.label.BackgroundTransparency = 0.35
+			row.label.Position = UDim2.fromOffset(0, 4)
+			row.label.Size = UDim2.fromOffset(labelWidth, 24)
+			row.label.Text = if team.side == "ALLY" then "YOUR TEAM" else "OPPONENT"
+			row.label.TextSize = if nextProps.compact then 9 else 10
+			row.host.Position = UDim2.fromOffset(labelWidth + 8, 1)
+			row.host.Size = UDim2.new(1, -labelWidth - 12, 1, -2)
 
 			for _, critter in team.critters do
 				usedCritters[critter.id] = true
@@ -98,8 +114,13 @@ function BattlefieldView.mount(parent: Instance, props: Props)
 					compact = nextProps.compact,
 					selectable = selectable[critter.id] == true,
 					highlighted = active[critter.id] == true,
+					highlightKind = if nextProps.actingCombatantId == critter.id
+						then "ACTING"
+						elseif targeted[critter.id] then "TARGETED"
+						else nil,
 					onActivated = nextProps.onCritterSelected,
 					animationCommand = (nextProps.animationCommandsByCritterId or {})[critter.id],
+					feedback = (nextProps.feedbackByCombatantId or {})[critter.id],
 				}
 				local handle = handles[critter.id]
 				if handle == nil or handleTeamIds[critter.id] ~= team.id then

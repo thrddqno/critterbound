@@ -18,8 +18,9 @@ opening draw. `RngState` stores algorithm, current state, and draw count.
 
 ## Card zones and energy
 
-Team state owns draw, hand, discard, queue, energy, and private plan version. Draws stop at ten cards;
-excess cards stay in draw pile. Empty draw piles reshuffle discard through the explicit RNG stream.
+Team state owns draw, hand, discard, queue, energy, and private plan version. Draws stop at nine
+cards; each scheduled draw fills only the available hand slots, so capped draws stay in the draw
+pile. Empty draw piles reshuffle discard through the explicit RNG stream.
 Defeat retires every card whose authoritative `sourceCritterInstanceId` belongs to that Critter.
 Retirement filters all active zones without deleting immutable card records or consuming RNG.
 
@@ -58,6 +59,11 @@ with authenticated `Player.UserId`, sends deterministic AI requests through the 
 resolves both committed plans, and calls `BattleProjector.project`. Exact command replays return
 stored receipts without resolving twice. Restart IDs are also idempotent. Player disconnect removes
 the in-memory session. Raw `BattleState` and `processedCommandsById` are never replicated.
+
+Combat v1.1 injects server-owned `CombatConfig.BloodMoon` into `RoundResolver`. The resolver applies
+the deterministic environmental batch after poison and before final outcome evaluation. Projection
+includes a cloned Blood Moon configuration for Round 9 warning and upcoming-damage HUD text, but no
+client command can set or override it.
 
 Run 6A injects `TrainingBattleInputAdapter` into this service. It replaces synthetic player instances
 with deep-copied selected owned Critters after profile load. AI content remains authored Training

@@ -19,6 +19,7 @@ local function requireSharedDefinition(name: string)
 end
 
 local StatusEffects = requireSharedBattle("StatusEffects")
+local PlanningRules = requireSharedBattle("PlanningRules")
 local TargetingRules = requireSharedDefinition("TargetingRules")
 
 local function indexById(values)
@@ -198,11 +199,23 @@ local function plan(state, teamId: string, cardDefinitionsById)
 		return a.cardInstanceId < b.cardInstanceId
 	end)
 
-	local remaining = teamState.energy or 0
+	local remaining = math.max(0, (teamState.energy or 0) - (teamState.reservedEnergy or 0))
 	local requests = {}
+	local sourceCounts = {}
+	local alreadyQueued = {}
+	for _, queued in teamState.queuedCards or {} do
+		sourceCounts[queued.sourceCombatantId] = (sourceCounts[queued.sourceCombatantId] or 0) + 1
+		alreadyQueued[queued.cardInstanceId] = true
+	end
 	for _, candidate in candidates do
-		if candidate.energyCost <= remaining then
+		local sourceCount = sourceCounts[candidate.sourceCombatantId] or 0
+		if
+			not alreadyQueued[candidate.cardInstanceId]
+			and candidate.energyCost <= remaining
+			and sourceCount < PlanningRules.MaxQueuedCardsPerCritter
+		then
 			remaining -= candidate.energyCost
+			sourceCounts[candidate.sourceCombatantId] = sourceCount + 1
 			table.insert(requests, {
 				cardInstanceId = candidate.cardInstanceId,
 				sourceCombatantId = candidate.sourceCombatantId,

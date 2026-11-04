@@ -10,6 +10,9 @@ local function requireDefinition(name: string)
 end
 
 local TargetingRules = requireDefinition("TargetingRules")
+local PlanningRules = if script ~= nil
+	then require(script.Parent.PlanningRules)
+	else require("./PlanningRules")
 
 local function clone(value)
 	if type(value) ~= "table" then
@@ -65,8 +68,8 @@ local function validatePlan(state, teamId: string, cardDefinitionsById)
 		return failure("PLAN_LOCKED", "Committed plan cannot change", "committed")
 	end
 	local queue = teamState.queuedCards or {}
-	if #queue > 10 then
-		return failure("INVALID_QUEUE_LENGTH", "Plan cannot exceed ten cards", "queuedCards")
+	if #queue > #team.combatantIds * PlanningRules.MaxQueuedCardsPerCritter then
+		return failure("INVALID_QUEUE_LENGTH", "Plan exceeds team queue capacity", "queuedCards")
 	end
 
 	local hand = {}
@@ -189,6 +192,13 @@ local function validatePlan(state, teamId: string, cardDefinitionsById)
 	end
 
 	for sourceId, indices in indicesBySource do
+		if #indices > PlanningRules.MaxQueuedCardsPerCritter then
+			return failure(
+				"CRITTER_QUEUE_LIMIT_EXCEEDED",
+				`Critter cannot queue more than {PlanningRules.MaxQueuedCardsPerCritter} cards`,
+				sourceId
+			)
+		end
 		table.sort(indices)
 		for expected, actual in indices do
 			if actual ~= expected then
@@ -255,6 +265,13 @@ local function queueCard(state, teamId: string, request, cardDefinitionsById)
 		if queued.sourceCombatantId == request.sourceCombatantId then
 			sourceCount += 1
 		end
+	end
+	if sourceCount >= PlanningRules.MaxQueuedCardsPerCritter then
+		return failure(
+			"CRITTER_QUEUE_LIMIT_EXCEEDED",
+			`Critter cannot queue more than {PlanningRules.MaxQueuedCardsPerCritter} cards`,
+			"sourceCombatantId"
+		)
 	end
 	table.insert(queue, {
 		cardInstanceId = request.cardInstanceId,
@@ -368,7 +385,7 @@ local function commitPlan(state, teamId: string, cardDefinitionsById)
 		bothCommitted = bothCommitted and candidate.committed
 	end
 	if bothCommitted then
-		nextState.phase = "COMMITTED"
+		nextState.phase = "RESOLVING"
 		nextState.stateVersion = (nextState.stateVersion or 0) + 1
 	end
 	return { ok = true, value = nextState }

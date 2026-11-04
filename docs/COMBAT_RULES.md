@@ -1,8 +1,11 @@
 # Combat Rules
 
-Run 4B implements server-authoritative round resolution as pure Luau. This document records the
-implemented rules and the tuning assumptions that were not previously specified. It does not
-describe client presentation, networking, persistence, or production artwork.
+Combat v1.1 keeps server-authoritative round resolution in pure Luau. Blood Moon adds endgame
+pressure without changing Combat v1.0 card, class, Skill, Morale, healing, poison, or shield rules.
+Core combat uses Health, Speed, Skill, and Morale; Attack, Defense, and Resolve remain retired.
+
+Maximum HP is server-derived as `150 + (4 * Health)`. Combatants enter battle at maximum HP.
+Owned Critters persist Health, Speed, Skill, and Morale; derived maximum HP is battle state only.
 
 ## Round flow
 
@@ -10,10 +13,11 @@ describe client presentation, networking, persistence, or production artwork.
 2. Each player may queue multiple cards for individual Critters, constrained by hand and energy.
 3. Both plans commit without revealing or resolving one player first.
 4. Server validates both plans against authoritative state.
-5. Server creates one actionable initiative entry for each living Critter with queued cards.
-6. Critters execute full queues sequentially in initiative order.
-7. After all actions, round-end poison ticks, knockouts, and status expiry are applied.
-8. Server emits ordered battle events, then advances round state or completes the match.
+5. Server snapshots both committed plans and prepares every valid queued shield effect.
+6. Server creates one actionable initiative entry for each living Critter with queued cards.
+7. Critters execute full queues sequentially in initiative order.
+8. After all actions, round-end poison ticks, Blood Moon, knockouts, and status expiry are applied.
+9. Server emits ordered battle events, then advances round state or completes the match.
 
 Planning order is not attack execution order. Clicking a card earlier does not grant an earlier
 attack. Simultaneous commitment closes planning; initiative and the rules below determine execution.
@@ -26,8 +30,9 @@ attack. Simultaneous commitment closes planning; initiative and the rules below 
 - 24-card team deck
 - Four ability definitions per Critter, two copies each
 
-Energy and unused cards carry between rounds. Energy caps at 10. Hands cap at 10; excess draws stay
-in the draw pile. Empty draw piles reshuffle discard deterministically when another draw is needed.
+Energy and unused cards carry between rounds. Energy caps at 10. Hands cap at 9; each scheduled
+draw only fills available hand slots, so a full hand draws nothing. Empty draw piles reshuffle
+discard deterministically when needed.
 Cards resolved during the round are discarded before the next draw, so they can be reshuffled and
 drawn again when the draw pile is empty. When a Critter is defeated, all cards sourced from that
 Critter retire from draw, hand, discard, and queue before the next draw.
@@ -56,7 +61,7 @@ Run 4B initiative uses a total deterministic order:
 1. Higher effective Speed first.
 2. Lower current HP first.
 3. Higher `skill` first; missing `skill` counts as zero.
-4. Higher `resolve` first; missing `resolve` counts as zero.
+4. Higher `morale` first; missing `morale` counts as zero.
 5. Combatant identifier lexicographically ascending.
 
 Effective Speed includes active `SPEED_UP` and `SPEED_DOWN` statuses, clamped at zero. Only living
@@ -91,7 +96,9 @@ Known effect kinds:
 - `SHIELD`: amount is granted shield.
 - `STATUS`: `statusId`, `magnitude`, and `duration` describe the applied status.
 
-Card definitions are static and are never mutated by resolution.
+Card definitions are static and are never mutated by resolution. Run 4 support values remain in the
+versioned card catalog rather than live configuration so balance cannot change mid-battle and break
+deterministic replay.
 
 ## Targeting and retargeting
 
@@ -116,15 +123,69 @@ Damage is calculated in this fixed order:
 
 1. Base card damage.
 2. Class multiplier: `1.15` advantage, `0.85` disadvantage, `1.00` neutral.
-3. Flat attack modifier: effective Attack minus base Attack. Missing modifiers count as zero.
-4. Flat defense reduction: `floor(defense * 0.5)`.
-5. Status vulnerability multiplier: `1.00` in Run 4B.
-6. Floor once and clamp to at least zero.
-7. Shield absorption in grant order.
-8. HP damage clamped to remaining HP.
+3. Same-class multiplier: `1.10` when card class matches source Critter class; otherwise `1.00`.
+4. Skill combo multiplier: `1 + (0.03 * Skill)` for a source with at least three committed cards;
+   otherwise `1.00`.
+5. Flat `DAMAGE_UP`/`DAMAGE_DOWN` modifier, then clamp to at least zero.
+6. Critical multiplier: `1.50` on a successful eligible roll; otherwise `1.00`.
+7. Floor once.
+8. Shield absorption in grant order.
+9. HP damage clamped to remaining HP.
 
-Effective Attack includes active `ATTACK_UP` and `ATTACK_DOWN` statuses, clamped at zero before the
-modifier is derived. Negative final damage is impossible.
+Ordinary damage does not read Attack or Defense. Negative final damage is impossible.
+
+```text
+floor(max(0, BaseDamage * Class * SameClass * Skill + FlatModifier) * Critical)
+```
+
+Skill combo eligibility is snapshotted from each originating Critter's committed queue. Three- and
+four-card queues qualify equally. Cross-class cards count toward their owner's combo, while cards
+from different Critters never combine. Eligibility does not change when cards fail or are canceled.
+Skill does not modify healing, shields, poison ticks, or status magnitudes.
+
+### Morale and critical hits
+
+Morale changes only critical probability:
+
+```text
+CritChance = min(0.35, 0.05 + 0.02 * Morale)
+```
+
+Morale 0, 5, 10, and 15 therefore produce 5%, 15%, 25%, and 35% chances. Chance remains
+capped at 35%. Speed does not reduce incoming critical chance, and critical damage is always `1.50`.
+There is no Last Stand mechanic.
+
+Direct `DAMAGE` effects are critical-eligible by default. Single-target, frontline, and area damage
+use the same rule; area effects roll independently for each living target in deterministic target
+order. A triggered damage effect is ineligible unless its authored effect explicitly sets
+`triggered = true, criticalEligible = true`. Healing, shields, status application, and poison ticks
+never roll and never critically strike.
+
+Critical rolls use `BattleState.criticalRng`, a dedicated `PARK_MILLER_V1` stream separate from the
+deck shuffle stream in `BattleState.rng`. Production seeds come from server-only, nonpublic GUID
+material. Both states advance only on the server and are omitted by `BattleProjector`; clients receive
+only resolved outcomes in events.
+
+Critical RNG advances exactly once for each critical-eligible `DAMAGE` effect applied to a valid,
+living target. A valid zero-base or zero-modified-damage hit still consumes one roll, but records
+`isCritical = false` and multiplier `1.00` to avoid false presentation. Missing, defeated, or invalid
+targets consume no roll. Skipped targeting, missing definitions, defeated-source actions, canceled
+actions, healing, shields, statuses, and poison consume no roll. There is no separate miss mechanic;
+if one is added later, its critical consumption rule must be specified. Multi-target damage consumes
+one roll per living target, in resolved target order.
+
+### Card-driven damage statuses
+
+Former Attack-modifying cards permanently use flat outgoing-damage statuses:
+
+| Card | Provisional replacement |
+| --- | --- |
+| `feral.frenzy` | `DAMAGE_UP` +8 for 2 rounds |
+| `feral.fury` | `DAMAGE_UP` +10 for 3 rounds |
+| `stone.crush` | `DAMAGE_DOWN` 5 for 2 rounds after damage |
+| `shade.weaken` | `DAMAGE_DOWN` 6 for 2 rounds |
+| `shade.curse` | `DAMAGE_DOWN` 5 for 3 rounds |
+| `shade.terror` | `DAMAGE_DOWN` 4 for 2 rounds after damage |
 
 ### Class ring
 
@@ -140,9 +201,31 @@ Self and the opposite class are neutral. Changing the ring or multipliers is rep
 ## Shields
 
 `BattleCombatant.shields` is an ordered array of `{ id, sourceCombatantId, amount, expiresAtRound }`.
-Shields stack, absorb in grant order, and are removed when fully consumed. Ordinary shields expire
-at the end of the round in which they are granted; they never carry to the next round. Damage
-records both the pre-shield amount and the absorbed amount. Poison bypasses shields.
+Shields stack, absorb in preparation order, and are removed when fully consumed. Same-class shield
+cards receive the `1.10` same-class multiplier exactly once; cross-class cards use `1.00`. Amounts are
+floored once after this multiplier. Skill and class matchups do not modify shields. Shields expire at
+the end of the round in which they are prepared; they never carry to the next round. Damage records
+both the pre-shield amount and the absorbed amount. Poison bypasses shields.
+
+After both plans commit, shield preparation runs before initiative. It reads the cloned committed
+plans and processes eligible shield effects in this total order:
+
+1. Team index ascending.
+2. Source battlefield slot ascending, then source combatant ID.
+3. Per-Critter queue index ascending.
+4. Authored effect index ascending.
+5. Resolved target order from the targeting rule.
+
+The source must be living, the queued card must belong to that source, and every target must resolve
+as valid and living. Each application emits `SHIELD_PREPARED` with card, effect, and preparation-order
+metadata. All preparation events precede `INITIATIVE_DETERMINED`, so source Speed cannot delay shield
+activation. Drawing or queueing alone never activates a shield.
+
+Normal action resolution skips shield effects. A shield-only card still produces normal card-play and
+target events and moves through the card lifecycle once. For mixed cards, only shield effects run in
+preparation; all non-shield effects retain authored order and run during the ordinary action. Energy
+is deducted once at commitment, and the card is consumed once. A prepared shield remains if its
+source is later defeated or its ordinary action is canceled, until consumed or expired.
 
 `SHIELD_ABSORBED` is emitted before `DAMAGE_APPLIED` when a shield consumes part of an attack.
 `STATUS_EXPIRED` with `statusId = "SHIELD"` reports any remaining shield at round end. A shield
@@ -162,8 +245,8 @@ and reason `TARGET_DEFEATED`. Healing has no effect on shields or statuses.
 | Status | Effect | Maximum stacks |
 | --- | --- | --- |
 | `POISON` | Round-end damage equal to `magnitude * stackCount` | 5 |
-| `ATTACK_UP` | Adds `magnitude * stackCount` to effective Attack | 3 |
-| `ATTACK_DOWN` | Subtracts `magnitude * stackCount` from effective Attack | 3 |
+| `DAMAGE_UP` | Adds `magnitude * stackCount` to outgoing card damage | 3 |
+| `DAMAGE_DOWN` | Subtracts `magnitude * stackCount` from outgoing card damage | 3 |
 | `SPEED_UP` | Adds `magnitude * stackCount` to effective Speed | 3 |
 | `SPEED_DOWN` | Subtracts `magnitude * stackCount` from effective Speed | 3 |
 
@@ -174,12 +257,30 @@ at the end of the application round.
 
 Poison ticks at round end before status expiry, bypasses shields, and can defeat a Critter. All
 living combatants tick once in deterministic team-index, slot, then combatant-ID order; victory is
-evaluated once after the batch. Attack and Speed modifiers apply only to later damage calculations or
-the next round's initiative.
+evaluated after the following Blood Moon batch. Damage and Speed modifiers apply only to later damage
+calculations or the next round's initiative.
+
+## Blood Moon
+
+The server-owned production configuration enables Blood Moon at round 10 with 50 HP damage, adding
+30 HP each later round: `50 + 30 * (roundNumber - 10)`. It runs once per eligible round after poison
+and before final outcome evaluation, status expiry, or round transition. A card-action victory remains
+immediate and skips later poison and Blood Moon processing.
+
+Blood Moon applies one fixed value to every living Critter in team-index, slot, then combatant-ID
+order. The full batch completes before victory is evaluated. It bypasses shields, ignores class,
+Skill, Morale, statuses, and all ordinary damage modifiers, cannot critically strike, consumes no
+critical or deck RNG, clamps HP at zero, and never revives or targets defeated Critters.
+
+`src/server/Config/CombatConfig.luau` owns `Enabled`, `StartingRound`, `InitialDamage`,
+`DamageIncrement`, and `BypassesShields`. `BattleService` injects this configuration into the pure
+resolver. `BattleProjector` exposes a cloned read-only projection only for HUD messaging; clients
+cannot submit an override. `lastBloodMoonRound` prevents a duplicate tick for the same round.
 
 ## Knockouts, victory, and draws
 
-Knockouts are evaluated after each card action and after the round-end poison batch. A defeated
+Knockouts are evaluated after each card action and after the combined round-end poison/Blood Moon
+batches. A defeated
 Critter cannot act again; pending actions are canceled with `ACTION_CANCELED` and reason `DEFEATED`.
 Its sourced cards retire from every active zone. Retirement preserves survivor order, consumes no
 RNG, grants no energy refund, and does not add replacement draws. Immutable `CardInstance` records
@@ -190,22 +291,22 @@ The match completes when at most one team has a living Critter:
 - One living team wins with reason `TEAM_DEFEATED`.
 - No living teams produce a draw with reason `MUTUAL_DESTRUCTION`.
 
-A draw is reachable in Run 4B through one atomic effect or simultaneous poison defeating the last
-living Critters of both teams. When a match completes, remaining actions are canceled with reason
-`MATCH_COMPLETED`. `COMPLETED` is terminal: round-end poison, status expiry, and round transition do
+A draw is reachable through one atomic effect or the full poison/Blood Moon processing defeating the
+last living Critters of both teams. When a match completes, remaining actions are canceled with
+reason `MATCH_COMPLETED`. `COMPLETED` is terminal: later round-end processing and round transition do
 not run after match completion.
 
 ## Round transition
 
 After a live round:
 
-1. Poison ticks and knockouts are resolved.
+1. Poison ticks, Blood Moon, and knockouts are resolved as ordered full batches.
 2. Statuses and shields expiring this round are removed.
 3. Cards sourced from defeated Critters retire from all active zones.
 4. Remaining queued cards, including canceled cards, leave hand for discard.
 5. Queues clear, reserved energy resets, commitment resets, and `planVersion` advances.
 6. Unused energy carries and gains +2, capped at 10.
-7. Each team draws three cards in team-index order, capped at 10 hand cards.
+7. Each team draws three cards in team-index order, capped at 9 hand cards.
 8. `roundNumber` advances and the phase returns to `PLANNING`.
 
 The RNG stream continues from `state.rng`; shuffles use `PARK_MILLER_V1`. Duplicate transitions are
@@ -222,12 +323,14 @@ IDs, and a payload. `state.eventVersion` stores the last emitted sequence.
 | `INITIATIVE_DETERMINED` | Ordered acting combatant IDs for the round |
 | `CARD_PLAYED` | Card, definition, source, and queue index |
 | `TARGET_SELECTED` | Resolved targets, retargeting, and skip state |
-| `DAMAGE_APPLIED` | Full damage breakdown and HP result |
-| `SHIELD_GRANTED` | Shield amount, expiry round, and stack count |
+| `DAMAGE_APPLIED` | Full damage breakdown, `isCritical`, shield absorption, and HP result |
+| `SHIELD_PREPARED` | Pre-initiative shield amount, card/effect identity, order, and stack count |
+| `SHIELD_GRANTED` | Compatibility event for direct effect-resolution callers |
 | `SHIELD_ABSORBED` | Absorbed amount and remaining damage |
 | `HEAL_APPLIED` | Requested and restored healing or rejection reason |
 | `STATUS_APPLIED` | Status, magnitude, stacks, expiry, and stacking state |
 | `STATUS_TICKED` | Poison damage and HP result |
+| `BLOOD_MOON_DAMAGE` | Environmental source, round damage, HP before/after, bypass state, and defeat flag |
 | `STATUS_EXPIRED` | Expired status or remaining shield |
 | `CRITTER_DEFEATED` | Defeated combatant and zero health |
 | `ACTION_CANCELED` | Canceled card and reason |

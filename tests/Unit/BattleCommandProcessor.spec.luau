@@ -11,7 +11,10 @@ return function(Harness)
 
 	local function setup()
 		local input = Fixtures.createInput()
-		local state = Factory.create(input, { rng = Rng, deck = Deck, validator = Validator }).value
+		local state = Factory.create(
+			input,
+			{ rng = Rng, criticalRngSeed = 9001, deck = Deck, validator = Validator }
+		).value
 		return { state = state, processedCommandsById = {} }, {
 			battlePlan = BattlePlan,
 			cardDefinitionsById = input.cardDefinitionsById,
@@ -62,7 +65,7 @@ return function(Harness)
 			context
 		)
 		Harness.expect(second.ok)
-		Harness.equal(second.value.session.state.phase, "COMMITTED")
+		Harness.equal(second.value.session.state.phase, "RESOLVING")
 		Harness.equal(second.value.session.state.stateVersion, 2)
 	end)
 
@@ -123,6 +126,25 @@ return function(Harness)
 			)
 		)
 		Harness.deepEqual(session, before)
+	end)
+
+	Harness.test("client-submitted critical outcomes are rejected", function()
+		local session, context = setup()
+		for _, forged in
+			{
+				{ isCritical = true },
+				{ criticalOutcome = true },
+				{ criticalMultiplier = 1.5 },
+			}
+		do
+			local result = Processor.process(
+				session,
+				101,
+				command("forged.critical", "team.1", "COMMIT_PLAN", 1, 0, forged),
+				context
+			)
+			Harness.expect(Harness.hasError(result, "INVALID_PAYLOAD"))
+		end
 	end)
 
 	Harness.test("accepted private command advances only team plan version", function()

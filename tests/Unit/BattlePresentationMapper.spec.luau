@@ -5,7 +5,7 @@ return function(Harness)
 	local MockBattleSession = require("../../src/client/Development/MockBattleSession")
 	local DomainFixtures = require("../Fixtures/DomainFixtures")
 
-	Harness.test("maps six Critters and six card instances", function()
+	Harness.test("maps six Critters and authoritative card-zone counts", function()
 		local snapshot = MockBattleSession.createSnapshot()
 		snapshot.critterDefinitionsById[DomainFixtures.Definitions.Stone.id] =
 			DomainFixtures.Definitions.Stone
@@ -13,7 +13,8 @@ return function(Harness)
 		Harness.expect(result.ok)
 		Harness.equal(#result.value.teams, 2)
 		Harness.equal(#result.value.critters, 6)
-		Harness.equal(#result.value.hand, 6)
+		Harness.equal(#result.value.hand, 3)
+		Harness.deepEqual(result.value.cardCounts, { hand = 3, draw = 9, discard = 0, total = 12 })
 		Harness.equal(result.value.teams[1].side, "ALLY")
 		Harness.equal(
 			result.value.teams[1].critters[1].displayName,
@@ -73,11 +74,37 @@ return function(Harness)
 		local result = Mapper.map(MockBattleSession.createSnapshot())
 		Harness.expect(result.ok)
 		local stone = result.value.teams[1].critters[1]
-		Harness.equal(stone.health, 120)
+		Harness.equal(stone.health, 358)
 		Harness.equal(stone.shield, 12)
 		Harness.equal(stone.speed, 10)
 		Harness.equal(result.value.energy.available, 3)
 		Harness.equal(result.value.phase, "PLANNING")
+	end)
+
+	Harness.test("maps completed Training Grounds summary", function()
+		local snapshot = MockBattleSession.createSnapshot()
+		snapshot.battleState.phase = "FINISHED"
+		snapshot.battleState.roundNumber = 4
+		for _, combatant in snapshot.battleState.combatants do
+			if combatant.teamId == "team.2" then
+				combatant.currentHealth = 0
+			end
+		end
+		snapshot.matchOutcome = {
+			isDraw = false,
+			winnerTeamId = "team.1",
+			reason = "TEAM_DEFEATED",
+		}
+		local result = Mapper.map(snapshot)
+		Harness.expect(result.ok)
+		Harness.deepEqual(result.value.resultSummary, {
+			result = "VICTORY",
+			roundsFought = 4,
+			allyStanding = 3,
+			allyTotal = 3,
+			enemyStanding = 0,
+			enemyTotal = 3,
+		})
 	end)
 
 	Harness.test("presentation mapper reports missing references", function()

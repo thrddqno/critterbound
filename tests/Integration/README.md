@@ -19,3 +19,7 @@ Lune cannot execute Roblox `Instance` UI. Verify manually in Roblox Studio, incl
 13. Confirm `Players.CharacterAutoLoads == false` and `LocalPlayer.Character == nil`.
 14. Confirm `Workspace.CurrentCamera.CameraType == Scriptable` and no falling or respawning occurs.
 15. Confirm no duplicate `ScreenGui`, character-related Output errors, or other runtime errors.
+16. Reach Round 9 and confirm the HUD warns `BLOOD MOON NEXT` with 50 HP upcoming damage.
+17. Reach Round 10 and confirm the HUD shows 50 HP, each living Critter receives distinct
+    `BLOOD MOON` environmental feedback after poison, and defeated Critters receive none.
+18. Continue to Round 11 and confirm upcoming Blood Moon damage changes to 80 HP.

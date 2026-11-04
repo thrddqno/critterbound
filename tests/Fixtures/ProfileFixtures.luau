@@ -55,6 +55,10 @@ local function newService(repository, options)
 		wait = if options and options.wait then options.wait else function() end,
 		loadWaitSeconds = 1,
 		loadPollSeconds = 0.1,
+		clock = if options and options.clock then options.clock else nil,
+		ownershipLockSeconds = if options and options.ownershipLockSeconds
+			then options.ownershipLockSeconds
+			else nil,
 	})
 end
 

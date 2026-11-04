@@ -20,7 +20,7 @@ local function toColor(value): Color3
 end
 
 local function resolveModel(props: Props)
-	local result = AppearanceResolver.resolve(props.appearanceGenome, props.className)
+	local result = AppearanceResolver.resolveDominant(props.appearanceGenome, props.className)
 	if result.ok then
 		return CritterSpriteModel.build(result.value, props.facing)
 	end

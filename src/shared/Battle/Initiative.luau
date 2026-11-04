@@ -60,11 +60,11 @@ export type CombatInitiativeEntry = {
 	speed: number,
 	currentHealth: number,
 	skill: number?,
-	resolve: number?,
+	morale: number?,
 	queuedCards: { QueuedCard },
 }
 
--- Run 4B priority: higher effective Speed, lower current HP, higher Skill, higher Resolve,
+-- Priority: higher effective Speed, lower current HP, higher Skill, higher Morale,
 -- then lower stable combatant ID. The legacy compare/order above remains for Run 2 contracts.
 local function compareCombat(a: CombatInitiativeEntry, b: CombatInitiativeEntry): boolean
 	if a.speed ~= b.speed then
@@ -78,10 +78,10 @@ local function compareCombat(a: CombatInitiativeEntry, b: CombatInitiativeEntry)
 	if aSkill ~= bSkill then
 		return aSkill > bSkill
 	end
-	local aResolve = a.resolve or 0
-	local bResolve = b.resolve or 0
-	if aResolve ~= bResolve then
-		return aResolve > bResolve
+	local aMorale = a.morale or 0
+	local bMorale = b.morale or 0
+	if aMorale ~= bMorale then
+		return aMorale > bMorale
 	end
 	return a.combatantId < b.combatantId
 end

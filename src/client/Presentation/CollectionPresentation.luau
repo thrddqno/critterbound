@@ -85,7 +85,7 @@ local function mapCritter(critter)
 		displayName = critter.displayName or "Unknown Critter",
 		class = critter.class or "Unknown",
 		appearanceGenome = critter.appearanceGenome,
-		statsText = `HP {stats.maxHealth or 0}  Speed {stats.speed or 0}  Skill {stats.skill or 0}  Resolve {stats.resolve or 0}`,
+		statsText = `Health {stats.health or 0}  Speed {stats.speed or 0}  Skill {stats.skill or 0}  Morale {stats.morale or 0}`,
 		appearanceText = appearanceText(appearance),
 		abilityText = abilityText(abilities),
 		equipmentText = if critter.equippedItem == nil

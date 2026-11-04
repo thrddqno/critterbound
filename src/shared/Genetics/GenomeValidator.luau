@@ -31,9 +31,19 @@ local function exactKeys(value, expected): boolean
 	return count == expectedCount
 end
 
-local function validateShape(genome, kind: string, slots)
+local function validateShape(genome, kind: string, slots, contentVersion: number?)
 	local errors = {}
 	local label = if kind == "APPEARANCE" then "appearance" else "ability"
+	local registryVersion = contentVersion or GeneRegistry.ContentVersion
+	if registryVersion ~= GeneRegistry.ContentVersion then
+		addError(
+			errors,
+			"UNSUPPORTED_GENE_CONTENT_VERSION",
+			`Gene content version {tostring(registryVersion)} is not registered`,
+			"contentVersion"
+		)
+		return errors
+	end
 	if type(genome) ~= "table" then
 		addError(errors, `INVALID_{string.upper(label)}_GENOME`, `Expected {label} genome table`)
 		return errors
@@ -79,7 +89,9 @@ local function validateShape(genome, kind: string, slots)
 		end
 		for _, position in GeneRegistry.Positions do
 			local geneId = triplet[position]
-			local definition = if type(geneId) == "string" then GeneRegistry.get(geneId) else nil
+			local definition = if type(geneId) == "string"
+				then GeneRegistry.getAtVersion(registryVersion, geneId)
+				else nil
 			if definition == nil then
 				addError(
 					errors,
@@ -117,14 +129,18 @@ local function append(errors, result, prefix: string)
 	end
 end
 
-local function validate(appearanceGenome, abilityGenome, className: string)
+local function validate(appearanceGenome, abilityGenome, className: string, contentVersion: number?)
 	local errors = {}
 	append(
 		errors,
-		GenomeValidator.validateAppearance(appearanceGenome, className),
+		GenomeValidator.validateAppearance(appearanceGenome, className, contentVersion),
 		"appearanceGenome"
 	)
-	append(errors, GenomeValidator.validateAbility(abilityGenome, className), "abilityGenome")
+	append(
+		errors,
+		GenomeValidator.validateAbility(abilityGenome, className, contentVersion),
+		"abilityGenome"
+	)
 	if #errors == 0 then
 		local appearance = AppearanceResolver.resolve(appearanceGenome, className)
 		if appearance.ok then
@@ -138,15 +154,15 @@ local function validate(appearanceGenome, abilityGenome, className: string)
 	return if #errors == 0 then { ok = true, value = true } else { ok = false, errors = errors }
 end
 
-GenomeValidator.validateAppearance = function(genome, className: string)
-	local errors = validateShape(genome, "APPEARANCE", GeneRegistry.AppearanceSlots)
+GenomeValidator.validateAppearance = function(genome, className: string, contentVersion: number?)
+	local errors = validateShape(genome, "APPEARANCE", GeneRegistry.AppearanceSlots, contentVersion)
 	if #errors == 0 then
 		append(errors, AppearanceResolver.resolve(genome, className), "")
 	end
 	return if #errors == 0 then { ok = true, value = true } else { ok = false, errors = errors }
 end
-GenomeValidator.validateAbility = function(genome, className: string)
-	local errors = validateShape(genome, "ABILITY", GeneRegistry.AbilitySlots)
+GenomeValidator.validateAbility = function(genome, className: string, contentVersion: number?)
+	local errors = validateShape(genome, "ABILITY", GeneRegistry.AbilitySlots, contentVersion)
 	if #errors == 0 then
 		append(errors, AbilityResolver.resolve(genome, className), "")
 	end

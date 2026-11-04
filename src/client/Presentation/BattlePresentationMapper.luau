@@ -45,6 +45,14 @@ export type InitiativeModel = {
 }
 export type QueueModel = { card: CardModel, sourceOrder: number }
 export type EnergyModel = { available: number, allocated: number, remaining: number }
+export type BattleResultSummary = {
+	result: "VICTORY" | "DEFEAT" | "DRAW",
+	roundsFought: number,
+	allyStanding: number,
+	allyTotal: number,
+	enemyStanding: number,
+	enemyTotal: number,
+}
 export type BattlePresentationModel = {
 	revision: number,
 	planVersion: number,
@@ -52,15 +60,20 @@ export type BattlePresentationModel = {
 	battleId: string,
 	roundNumber: number,
 	phase: string,
+	planningDeadline: number?,
+	bloodMoon: any?,
+	committed: boolean,
 	teams: { TeamModel },
 	critters: { CritterModel },
 	hand: { CardModel },
+	cardCounts: { hand: number, draw: number, discard: number, total: number },
 	visibleQueue: { QueueModel },
 	initiative: { InitiativeModel },
 	energy: EnergyModel,
 	canPlan: boolean,
 	canRequestCommit: boolean,
 	matchOutcome: any?,
+	resultSummary: BattleResultSummary?,
 }
 export type AuthoritativePresentationSnapshot = {
 	revision: number,
@@ -329,6 +342,39 @@ local function map(snapshot: any): PresentationResult
 
 	local energy = roundState.energy
 	local allocated = roundState.reservedEnergy or 0
+	local resultSummary = nil
+	if snapshot.matchOutcome ~= nil then
+		local allyStanding = 0
+		local allyTotal = 0
+		local enemyStanding = 0
+		local enemyTotal = 0
+		for _, team in teamModels do
+			for _, critter in team.critters do
+				if team.side == "ALLY" then
+					allyTotal += 1
+					if not critter.defeated then
+						allyStanding += 1
+					end
+				else
+					enemyTotal += 1
+					if not critter.defeated then
+						enemyStanding += 1
+					end
+				end
+			end
+		end
+		resultSummary = {
+			result = if snapshot.matchOutcome.isDraw
+				then "DRAW"
+				elseif snapshot.matchOutcome.winnerTeamId == snapshot.viewerTeamId then "VICTORY"
+				else "DEFEAT",
+			roundsFought = battle.roundNumber,
+			allyStanding = allyStanding,
+			allyTotal = allyTotal,
+			enemyStanding = enemyStanding,
+			enemyTotal = enemyTotal,
+		}
+	end
 	return {
 		ok = true,
 		value = {
@@ -338,9 +384,20 @@ local function map(snapshot: any): PresentationResult
 			battleId = battle.id,
 			roundNumber = battle.roundNumber,
 			phase = battle.phase,
+			planningDeadline = battle.planningDeadline,
+			bloodMoon = battle.bloodMoon,
+			committed = roundState.committed,
 			teams = teamModels,
 			critters = critterModels,
 			hand = hand,
+			cardCounts = {
+				hand = roundState.handCount or #roundState.handCardInstanceIds,
+				draw = roundState.drawPileCount or 0,
+				discard = roundState.discardCount or 0,
+				total = (roundState.handCount or #roundState.handCardInstanceIds)
+					+ (roundState.drawPileCount or 0)
+					+ (roundState.discardCount or 0),
+			},
 			visibleQueue = visibleQueue,
 			initiative = initiative,
 			energy = {
@@ -351,6 +408,7 @@ local function map(snapshot: any): PresentationResult
 			canPlan = battle.phase == "PLANNING" and not roundState.committed,
 			canRequestCommit = battle.phase == "PLANNING" and not roundState.committed,
 			matchOutcome = snapshot.matchOutcome,
+			resultSummary = resultSummary,
 		},
 	}
 end

@@ -168,6 +168,31 @@ return function(Harness)
 		Harness.expect(Harness.hasError(result, "DUPLICATE_CARD"))
 	end)
 
+	Harness.test("forged fifth card for one Critter is rejected", function()
+		local context = Harness.clone(Fixtures.Context)
+		local command = Harness.clone(Fixtures.ValidCommand)
+		context.availableEnergy = 100
+		command.queuedCards = {}
+		local source = Fixtures.Combatants.stone
+		for index = 1, 5 do
+			local cardId = `hand.stone.guard.{index}`
+			context.cardInstancesById[cardId] = {
+				id = cardId,
+				definitionId = Fixtures.CardDefinitions.StoneGuard.id,
+				sourceCritterInstanceId = source.critterInstanceId,
+			}
+			table.insert(context.handCardInstanceIds, cardId)
+			table.insert(command.queuedCards, {
+				cardInstanceId = cardId,
+				sourceCombatantId = source.id,
+				targetCombatantIds = {},
+				queueIndex = index,
+			})
+		end
+		local result = Validator.validateBattleCommand(command, context)
+		Harness.expect(Harness.hasError(result, "CRITTER_QUEUE_LIMIT_EXCEEDED"))
+	end)
+
 	Harness.test("invalid ownership rejected", function()
 		local command = Harness.clone(Fixtures.ValidCommand)
 		command.actorUserId = 999
@@ -240,6 +265,19 @@ return function(Harness)
 			{ { kind = "STATUS", statusId = "POISON", magnitude = 1, duration = 1.5 } }
 		local durationResult = Validator.validateCardDefinition(definition, validAbilityIds)
 		Harness.expect(Harness.hasError(durationResult, "INVALID_STATUS_DURATION"))
+
+		definition.effects = {
+			{ kind = "DAMAGE", amount = 1, triggered = true, criticalEligible = true },
+		}
+		Harness.expect(Validator.validateCardDefinition(definition, validAbilityIds).ok)
+
+		definition.effects = { { kind = "HEAL", amount = 1, criticalEligible = true } }
+		Harness.expect(
+			Harness.hasError(
+				Validator.validateCardDefinition(definition, validAbilityIds),
+				"INVALID_CRITICAL_ELIGIBILITY"
+			)
+		)
 	end)
 
 	Harness.test("new targeting rules are valid card definitions", function()
@@ -251,15 +289,21 @@ return function(Harness)
 		end
 	end)
 
-	Harness.test("optional skill and resolve stats validate", function()
+	Harness.test("four core stats validate and retired stats are rejected", function()
 		local definition = Harness.clone(Fixtures.Definitions.Feral)
 		definition.baseStats.skill = 4
-		definition.baseStats.resolve = 2
+		definition.baseStats.morale = 2
 		Harness.expect(Validator.validateCritterDefinition(definition).ok)
 
-		definition.baseStats.resolve = -1
+		definition.baseStats.morale = -1
 		local result = Validator.validateCritterDefinition(definition)
 		Harness.expect(Harness.hasError(result, "INVALID_STAT"))
+
+		definition.baseStats.morale = 2
+		definition.baseStats.attack = 10
+		Harness.expect(
+			Harness.hasError(Validator.validateCritterDefinition(definition), "RETIRED_STAT")
+		)
 	end)
 
 	Harness.test("automatic targeting rules require an empty client target list", function()

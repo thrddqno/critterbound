@@ -31,16 +31,16 @@ local cards = {
 		"Stone",
 		1,
 		"SELF",
-		"Gain 22 shield.",
-		{ { kind = "SHIELD", amount = 22 } }
+		"Prepare 50 shield.",
+		{ { kind = "SHIELD", amount = 50 } }
 	),
 	card(
 		"stone.bulwark",
 		"Stone",
 		2,
 		"ALL_ALLIES",
-		"All allies gain 10 shield.",
-		{ { kind = "SHIELD", amount = 10 } }
+		"Prepare 25 shield for each ally.",
+		{ { kind = "SHIELD", amount = 25 } }
 	),
 	card(
 		"stone.quake",
@@ -79,36 +79,36 @@ local cards = {
 		"Feral",
 		1,
 		"SELF",
-		"Gain Attack Up for 2 rounds.",
-		{ { kind = "STATUS", statusId = "ATTACK_UP", magnitude = 8, duration = 2 } }
+		"Gain Damage Up for 2 rounds.",
+		{ { kind = "STATUS", statusId = "DAMAGE_UP", magnitude = 8, duration = 2 } }
 	),
 	card("feral.rend", "Feral", 2, "ENEMY", "Damage and poison slowest enemy.", {
 		{ kind = "DAMAGE", amount = 25 },
-		{ kind = "STATUS", statusId = "POISON", magnitude = 4, duration = 2 },
+		{ kind = "STATUS", statusId = "POISON", magnitude = 9, duration = 2 },
 	}),
 	card(
 		"verdant.mend",
 		"Verdant",
 		1,
 		"ALLY",
-		"Heal an ally for 28.",
-		{ { kind = "HEAL", amount = 28 } }
+		"Heal an ally for 55.",
+		{ { kind = "HEAL", amount = 55 } }
 	),
 	card(
 		"verdant.renew",
 		"Verdant",
 		1,
 		"SELF",
-		"Heal self for 24.",
-		{ { kind = "HEAL", amount = 24 } }
+		"Heal self for 48.",
+		{ { kind = "HEAL", amount = 48 } }
 	),
 	card(
 		"verdant.grove",
 		"Verdant",
 		2,
 		"ALL_ALLIES",
-		"Heal all allies for 15.",
-		{ { kind = "HEAL", amount = 15 } }
+		"Heal all allies for 30.",
+		{ { kind = "HEAL", amount = 30 } }
 	),
 	card(
 		"verdant.seed",
@@ -116,24 +116,24 @@ local cards = {
 		1,
 		"ENEMY",
 		"Poison slowest enemy for 2 rounds.",
-		{ { kind = "STATUS", statusId = "POISON", magnitude = 6, duration = 2 } }
+		{ { kind = "STATUS", statusId = "POISON", magnitude = 12, duration = 2 } }
 	),
 	card(
 		"tide.mend",
 		"Tide",
 		1,
 		"ALLY",
-		"Heal an ally for 26.",
-		{ { kind = "HEAL", amount = 26 } }
+		"Heal an ally for 50.",
+		{ { kind = "HEAL", amount = 50 } }
 	),
-	card("tide.renew", "Tide", 1, "SELF", "Heal self for 22.", { { kind = "HEAL", amount = 22 } }),
+	card("tide.renew", "Tide", 1, "SELF", "Heal self for 44.", { { kind = "HEAL", amount = 44 } }),
 	card(
 		"tide.barrier",
 		"Tide",
 		2,
 		"ALL_ALLIES",
-		"All allies gain 9 shield.",
-		{ { kind = "SHIELD", amount = 9 } }
+		"Prepare 22 shield for each ally.",
+		{ { kind = "SHIELD", amount = 22 } }
 	),
 	card(
 		"tide.surge",
@@ -143,14 +143,21 @@ local cards = {
 		"Deal 42 damage to slowest enemy.",
 		{ { kind = "DAMAGE", amount = 42 } }
 	),
-	card("gale.ward", "Gale", 1, "SELF", "Gain 20 shield.", { { kind = "SHIELD", amount = 20 } }),
+	card(
+		"gale.ward",
+		"Gale",
+		1,
+		"SELF",
+		"Prepare 40 shield.",
+		{ { kind = "SHIELD", amount = 40 } }
+	),
 	card(
 		"gale.shelter",
 		"Gale",
 		2,
 		"ALL_ALLIES",
-		"All allies gain 8 shield.",
-		{ { kind = "SHIELD", amount = 8 } }
+		"Prepare 20 shield for each ally.",
+		{ { kind = "SHIELD", amount = 20 } }
 	),
 	card(
 		"gale.gust",
@@ -182,7 +189,7 @@ local cards = {
 		1,
 		"ENEMY",
 		"Poison slowest enemy for 2 rounds.",
-		{ { kind = "STATUS", statusId = "POISON", magnitude = 8, duration = 2 } }
+		{ { kind = "STATUS", statusId = "POISON", magnitude = 15, duration = 2 } }
 	),
 	card(
 		"shade.weaken",
@@ -190,7 +197,7 @@ local cards = {
 		1,
 		"ENEMY",
 		"Weaken slowest enemy for 2 rounds.",
-		{ { kind = "STATUS", statusId = "ATTACK_DOWN", magnitude = 6, duration = 2 } }
+		{ { kind = "STATUS", statusId = "DAMAGE_DOWN", magnitude = 6, duration = 2 } }
 	),
 	card(
 		"shade.storm",
@@ -205,36 +212,36 @@ local cards = {
 		"Stone",
 		2,
 		"ALL_ALLIES",
-		"All allies gain 12 shield.",
-		{ { kind = "SHIELD", amount = 12 } }
+		"Prepare 30 shield for each ally.",
+		{ { kind = "SHIELD", amount = 30 } }
 	),
 	card("stone.crush", "Stone", 2, "FRONT_ENEMY", "Damage and weaken front enemy.", {
 		{ kind = "DAMAGE", amount = 24 },
-		{ kind = "STATUS", statusId = "ATTACK_DOWN", magnitude = 5, duration = 2 },
+		{ kind = "STATUS", statusId = "DAMAGE_DOWN", magnitude = 5, duration = 2 },
 	}),
 	card("feral.maul", "Feral", 1, "ENEMY", "Damage and poison slowest enemy.", {
 		{ kind = "DAMAGE", amount = 30 },
-		{ kind = "STATUS", statusId = "POISON", magnitude = 4, duration = 2 },
+		{ kind = "STATUS", statusId = "POISON", magnitude = 9, duration = 2 },
 	}),
 	card(
 		"feral.fury",
 		"Feral",
 		2,
 		"SELF",
-		"Gain Attack Up for 3 rounds.",
-		{ { kind = "STATUS", statusId = "ATTACK_UP", magnitude = 10, duration = 3 } }
+		"Gain Damage Up for 3 rounds.",
+		{ { kind = "STATUS", statusId = "DAMAGE_UP", magnitude = 10, duration = 3 } }
 	),
 	card(
 		"verdant.bloom",
 		"Verdant",
 		2,
 		"ALL_ALLIES",
-		"Heal all allies for 18.",
-		{ { kind = "HEAL", amount = 18 } }
+		"Heal all allies for 35.",
+		{ { kind = "HEAL", amount = 35 } }
 	),
 	card("verdant.bramble", "Verdant", 2, "FRONT_ENEMY", "Damage and poison front enemy.", {
 		{ kind = "DAMAGE", amount = 16 },
-		{ kind = "STATUS", statusId = "POISON", magnitude = 5, duration = 2 },
+		{ kind = "STATUS", statusId = "POISON", magnitude = 10, duration = 2 },
 	}),
 	card(
 		"tide.torrent",
@@ -244,9 +251,9 @@ local cards = {
 		"Deal 20 damage to all enemies.",
 		{ { kind = "DAMAGE", amount = 20 } }
 	),
-	card("tide.purge", "Tide", 1, "ALLY", "Heal an ally for 24 and grant 8 shield.", {
-		{ kind = "HEAL", amount = 24 },
-		{ kind = "SHIELD", amount = 8 },
+	card("tide.purge", "Tide", 1, "ALLY", "Prepare 15 shield, then heal an ally for 45.", {
+		{ kind = "HEAL", amount = 45 },
+		{ kind = "SHIELD", amount = 15 },
 	}),
 	card(
 		"gale.squall",
@@ -270,11 +277,11 @@ local cards = {
 		1,
 		"ENEMY",
 		"Weaken slowest enemy for 3 rounds.",
-		{ { kind = "STATUS", statusId = "ATTACK_DOWN", magnitude = 5, duration = 3 } }
+		{ { kind = "STATUS", statusId = "DAMAGE_DOWN", magnitude = 5, duration = 3 } }
 	),
 	card("shade.terror", "Shade", 2, "ALL_ENEMIES", "Damage and weaken all enemies.", {
 		{ kind = "DAMAGE", amount = 16 },
-		{ kind = "STATUS", statusId = "ATTACK_DOWN", magnitude = 4, duration = 2 },
+		{ kind = "STATUS", statusId = "DAMAGE_DOWN", magnitude = 4, duration = 2 },
 	}),
 }
 

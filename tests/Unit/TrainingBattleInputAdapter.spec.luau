@@ -24,6 +24,7 @@ return function(Harness)
 			local deps = Run5Fixtures.dependencies()
 			local battle = BattleFactory.create(inputResult.value, {
 				rng = deps.rng,
+				criticalRngSeed = 9001,
 				deck = deps.deck,
 				validator = deps.validator,
 			})
@@ -32,7 +33,7 @@ return function(Harness)
 			battle.value.combatants[1].statusEffects = { { id = "battle-only" } }
 			local after = service.GetSelectedTeam(701)
 			Harness.expect(after.ok)
-			Harness.equal(after.value[1].baseStats.maxHealth, selected.value[1].baseStats.maxHealth)
+			Harness.equal(after.value[1].baseStats.health, selected.value[1].baseStats.health)
 			Harness.expect(after.value[1].currentHealth == nil)
 			Harness.expect(after.value[1].statusEffects == nil)
 		end

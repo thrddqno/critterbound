@@ -139,7 +139,7 @@ local function new(dependencies)
 		local offspringId = `critter:{deps.generateId()}`
 		local parentIds = { egg.parentAId, egg.parentBId }
 		local offspring = {
-			schemaVersion = 2,
+			schemaVersion = 3,
 			id = offspringId,
 			definitionId = definition.id,
 			ownerUserId = userId,

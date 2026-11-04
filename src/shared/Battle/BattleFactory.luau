@@ -10,7 +10,18 @@ local function requireGenetics(name: string)
 end
 
 local AbilityResolver = requireGenetics("AbilityResolver")
-local AppearanceResolver = requireGenetics("AppearanceResolver")
+local GenotypeExpressor = requireGenetics("GenotypeExpressor")
+local DeckBuilder = if script ~= nil
+	then require(script.Parent.DeckBuilder)
+	else require("./DeckBuilder")
+local DeckRules = if script ~= nil then require(script.Parent.DeckRules) else require("./DeckRules")
+local DeckShuffler = if script ~= nil
+	then require(script.Parent.DeckShuffler)
+	else require("./DeckShuffler")
+local DeckState = if script ~= nil then require(script.Parent.DeckState) else require("./DeckState")
+local CombatStats = if script ~= nil
+	then require(script.Parent.CombatStats)
+	else require("./CombatStats")
 
 local VALID_CLASSES =
 	{ Verdant = true, Tide = true, Feral = true, Gale = true, Shade = true, Stone = true }
@@ -62,12 +73,13 @@ local function create(input, dependencies)
 	if
 		type(dependencies) ~= "table"
 		or dependencies.rng == nil
+		or dependencies.criticalRngSeed == nil
 		or dependencies.deck == nil
 		or dependencies.validator == nil
 	then
 		return failure(
 			"INVALID_DEPENDENCIES",
-			"Explicit RNG, deck, and validator dependencies are required",
+			"Explicit deck RNG, critical RNG seed, deck, and validator dependencies are required",
 			nil
 		)
 	end
@@ -80,6 +92,15 @@ local function create(input, dependencies)
 		return rngResult
 	end
 	local rng = rngResult.value
+	local criticalRngResult = dependencies.rng.new(dependencies.criticalRngSeed)
+	if not criticalRngResult.ok then
+		return failure("INVALID_CRITICAL_RNG_SEED", "Critical RNG seed is invalid", nil)
+	end
+	local criticalRng = criticalRngResult.value
+	local rules = dependencies.deckRules or DeckRules.Default
+	local deckBuilder = dependencies.deckBuilder or DeckBuilder
+	local genotypeExpressor = dependencies.genotypeExpressor or GenotypeExpressor
+	local deckShuffler = dependencies.deckShuffler or DeckShuffler
 	local teams = sortedTeams(input.teams)
 	if teams[1].id == teams[2].id then
 		return failure("DUPLICATE_TEAM_ID", "Team IDs must differ", "teams")
@@ -148,16 +169,17 @@ local function create(input, dependencies)
 				`teams[{teamIndex}].ownerUserId`
 			)
 		end
-		if arrayLength(teamInput.critterInstances) ~= 3 then
+		if arrayLength(teamInput.critterInstances) ~= rules.CrittersPerTeam then
 			return failure(
 				"INVALID_TEAM_SIZE",
-				"Each team requires three Critters",
+				`Each team requires {rules.CrittersPerTeam} Critters`,
 				`teams[{teamIndex}].critterInstances`
 			)
 		end
 
 		local combatantIds = {}
 		local deckIds = {}
+		local contributions = {}
 		for slot, instance in teamInput.critterInstances do
 			if type(instance) ~= "table" or type(instance.id) ~= "string" or instance.id == "" then
 				return failure(
@@ -201,8 +223,7 @@ local function create(input, dependencies)
 			if
 				not VALID_CLASSES[critterDefinition.class]
 				or type(baseStats) ~= "table"
-				or type(baseStats.maxHealth) ~= "number"
-				or baseStats.maxHealth <= 0
+				or not CombatStats.isValidHealth(baseStats.health)
 			then
 				return failure(
 					"INVALID_CRITTER_DEFINITION",
@@ -210,22 +231,18 @@ local function create(input, dependencies)
 					instance.definitionId
 				)
 			end
-			local appearanceResolution =
-				AppearanceResolver.resolve(instance.appearanceGenome, critterDefinition.class)
-			if not appearanceResolution.ok then
-				return appearanceResolution
-			end
-			local abilityResolution = AbilityResolver.resolve(
+			local expression = genotypeExpressor.express(
+				instance.appearanceGenome,
 				instance.abilityGenome,
-				critterDefinition.class,
-				appearanceResolution.value.speciesId
+				critterDefinition.class
 			)
-			if not abilityResolution.ok then
-				return abilityResolution
+			if not expression.ok then
+				return expression
 			end
-			local abilities = abilityResolution.value.abilityIds
+			local abilities = expression.value.phenotype.abilities.abilityIds
 			local seenAbilities = {}
-			for abilityIndex, abilityId in abilities do
+			local definitionIds = {}
+			for _, abilityId in abilities do
 				if seenAbilities[abilityId] then
 					return failure(
 						"DUPLICATE_ABILITY_ID",
@@ -261,19 +278,17 @@ local function create(input, dependencies)
 						abilityId
 					)
 				end
-				for copy = 1, 2 do
-					local cardId = `card:t{teamIndex}:s{slot}:a{abilityIndex}:c{copy}`
-					table.insert(cardInstances, {
-						id = cardId,
-						definitionId = cardDefinition.id,
-						sourceCritterInstanceId = instance.id,
-					})
-					table.insert(deckIds, cardId)
-				end
+				table.insert(definitionIds, cardDefinition.id)
 			end
+			table.insert(contributions, {
+				sourceCritterInstanceId = instance.id,
+				definitionIds = definitionIds,
+			})
 
 			local combatantId = `combatant:t{teamIndex}:s{slot}`
 			table.insert(combatantIds, combatantId)
+			local battleStats = table.clone(baseStats)
+			battleStats.maxHealth = CombatStats.maxHealth(baseStats.health)
 			table.insert(combatants, {
 				id = combatantId,
 				critterInstanceId = instance.id,
@@ -281,22 +296,41 @@ local function create(input, dependencies)
 				slot = slot,
 				class = critterDefinition.class,
 				abilityIds = table.clone(abilities),
-				stats = table.clone(baseStats),
-				currentHealth = baseStats.maxHealth,
+				stats = battleStats,
+				currentHealth = battleStats.maxHealth,
 				statusEffects = {},
 				shields = {},
 			})
 		end
 
-		if #deckIds ~= 24 then
-			return failure("INVALID_DECK_SIZE", "Team deck must contain 24 cards", teamInput.id)
+		local built = deckBuilder.build(teamIndex, contributions, rules)
+		if not built.ok then
+			return built
 		end
-		rng, deckIds = dependencies.rng.shuffle(rng, deckIds)
-		local drawResult = dependencies.deck.draw({
-			drawPileCardInstanceIds = deckIds,
-			handCardInstanceIds = {},
-			discardCardInstanceIds = {},
-		}, 6, rng, dependencies.rng.shuffle)
+		for _, cardInstance in built.value.cardInstances do
+			table.insert(cardInstances, cardInstance)
+		end
+		deckIds = built.value.deckIds
+
+		if #deckIds ~= rules.TeamDeckSize then
+			return failure(
+				"INVALID_DECK_SIZE",
+				`Team deck must contain {rules.TeamDeckSize} cards`,
+				teamInput.id
+			)
+		end
+		rng, deckIds = deckShuffler.shuffle(rng, deckIds, dependencies.rng)
+		local zones = DeckState.create(deckIds)
+		local function shuffle(currentRng, values)
+			return deckShuffler.shuffle(currentRng, values, dependencies.rng)
+		end
+		local drawResult = dependencies.deck.draw(
+			zones,
+			rules.OpeningHandSize,
+			rng,
+			shuffle,
+			{ maxHandSize = rules.MaxHandSize }
+		)
 		if not drawResult.ok then
 			return drawResult
 		end
@@ -315,6 +349,8 @@ local function create(input, dependencies)
 			drawPileCardInstanceIds = drawResult.value.zones.drawPileCardInstanceIds,
 			handCardInstanceIds = drawResult.value.zones.handCardInstanceIds,
 			discardCardInstanceIds = drawResult.value.zones.discardCardInstanceIds,
+			removedCardInstanceIds = drawResult.value.zones.removedCardInstanceIds,
+			lastDrawnRound = 1,
 			queuedCards = {},
 			planVersion = 0,
 			committed = false,
@@ -324,10 +360,11 @@ local function create(input, dependencies)
 	return {
 		ok = true,
 		value = {
-			schemaVersion = 2,
+			schemaVersion = 3,
 			id = input.battleId,
 			rngSeed = input.rngSeed,
 			rng = rng,
+			criticalRng = criticalRng,
 			stateVersion = 1,
 			eventVersion = 0,
 			lastResolvedRound = 0,

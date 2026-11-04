@@ -10,11 +10,11 @@ return function(Harness)
 		local first = service.GetProfile(601)
 		Harness.expect(first.ok)
 		Harness.expect(first.value.sessionLock == nil)
-		first.value.ownedCritters[1].baseStats.maxHealth = 1
+		first.value.ownedCritters[1].baseStats.health = 1
 		first.value.selectedTeam[1] = "forged"
 		local second = service.GetProfile(601)
 		Harness.expect(second.ok)
-		Harness.expect(second.value.ownedCritters[1].baseStats.maxHealth > 1)
+		Harness.expect(second.value.ownedCritters[1].baseStats.health > 1)
 		Harness.expect(second.value.selectedTeam[1] ~= "forged")
 	end)
 

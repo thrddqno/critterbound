@@ -7,11 +7,19 @@ local function requireShared(folder: string, name: string)
 	return require(`../../shared/{folder}/{name}`)
 end
 
+local function requireGenetics(name: string)
+	if script ~= nil then
+		return require(script.Parent[name])
+	end
+	return require(`./{name}`)
+end
+
 local DeterministicRng = requireShared("Battle", "DeterministicRng")
 local GeneRegistry = requireShared("Genetics", "GeneRegistry")
 local GenomeValidator = requireShared("Genetics", "GenomeValidator")
 local AppearanceResolver = requireShared("Genetics", "AppearanceResolver")
 local AbilityResolver = requireShared("Genetics", "AbilityResolver")
+local ClassicInheritancePolicy = requireGenetics("ClassicInheritancePolicy")
 
 local InheritanceEngine = {}
 
@@ -318,5 +326,30 @@ local function inherit(parentA, parentB, offspringClass: string, seedOrState, op
 	}
 end
 
+local function inheritWithPolicy(
+	policy: string,
+	parentA,
+	parentB,
+	offspringClass: string,
+	seedOrState,
+	options
+)
+	if policy == ClassicInheritancePolicy.Algorithm then
+		return ClassicInheritancePolicy.inherit(
+			parentA,
+			parentB,
+			offspringClass,
+			seedOrState,
+			options
+		)
+	elseif policy == "INHERITANCE_V1" then
+		return inherit(parentA, parentB, offspringClass, seedOrState, options)
+	end
+	return failure("UNKNOWN_INHERITANCE_POLICY", "Inheritance policy is not registered")
+end
+
 InheritanceEngine.inherit = inherit
+InheritanceEngine.inheritWithPolicy = inheritWithPolicy
+InheritanceEngine.LegacyPolicy = "INHERITANCE_V1"
+InheritanceEngine.ClassicPolicy = ClassicInheritancePolicy.Algorithm
 return table.freeze(InheritanceEngine)

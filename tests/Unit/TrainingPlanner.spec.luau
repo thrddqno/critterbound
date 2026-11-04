@@ -12,6 +12,7 @@ return function(Harness)
 		local deps = Fixtures.dependencies()
 		local state = Factory.create(input, {
 			rng = deps.rng,
+			criticalRngSeed = 9001,
 			deck = deps.deck,
 			validator = deps.validator,
 		}).value
@@ -107,5 +108,33 @@ return function(Harness)
 		Harness.expect(planned.ok)
 		Harness.equal(#planned.value.requests, 1)
 		Harness.deepEqual(planned.value.requests[1].targetCombatantIds, {})
+	end)
+
+	Harness.test("AI never plans more than four cards for one Critter", function()
+		local state, input = setup()
+		local aiState = state.teamRoundStates[2]
+		local sourceInstanceId = nil
+		for _, combatant in state.combatants do
+			if combatant.teamId == input.aiTeamId then
+				sourceInstanceId = combatant.critterInstanceId
+				break
+			end
+		end
+		local hand = {}
+		local definitions = Harness.clone(input.cardDefinitionsById)
+		for _, card in state.cardInstances do
+			if card.sourceCritterInstanceId == sourceInstanceId then
+				table.insert(hand, card.id)
+				definitions[card.definitionId].energyCost = 0
+			end
+		end
+		Harness.equal(#hand, 8)
+		aiState.handCardInstanceIds = hand
+		local planned = Planner.plan(state, input.aiTeamId, definitions)
+		Harness.expect(planned.ok)
+		Harness.equal(#planned.value.requests, 4)
+		for _, request in planned.value.requests do
+			Harness.equal(request.sourceCombatantId, planned.value.requests[1].sourceCombatantId)
+		end
 	end)
 end

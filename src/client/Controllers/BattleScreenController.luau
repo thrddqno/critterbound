@@ -1,9 +1,12 @@
 --!strict
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
 
 local BattlePresentationMapper = require(script.Parent.Parent.Presentation.BattlePresentationMapper)
 local BattlePlayback = require(script.Parent.Parent.Presentation.BattlePlayback)
+local BattleSnapshotOrder = require(script.Parent.Parent.Presentation.BattleSnapshotOrder)
+local PlanningState = require(script.Parent.Parent.Presentation.PlanningState)
 local TargetSelection = require(script.Parent.Parent.Presentation.TargetSelection)
 local AssetCatalog = require(script.Parent.Parent.Assets.AssetCatalog)
 local BattleScreen = require(script.Parent.Parent.UI.Components.BattleScreen)
@@ -55,22 +58,65 @@ function BattleScreenController.start(playerGui: PlayerGui, battleRequest: Remot
 	local playbackActive = false
 	local commandCounter = 0
 	local playbackEpoch = 0
+	local playbackFastForward = false
+	local playedEventIds = {}
+	local playbackPresentation = {
+		active = false,
+		currentActionName = nil,
+		logEntries = {},
+		roundTransition = false,
+		fastForward = false,
+		actingCombatantId = nil,
+		targetCombatantIds = {},
+		feedbackByCombatantId = {},
+	}
+	local deadlineEpoch = 0
+	local snapshotVersion: any = nil
 
 	local function resolveAsset(id: string)
 		return AssetCatalog:resolve(id)
 	end
 
 	local function planningState()
-		return {
+		local queuedCards = if model ~= nil then model.visibleQueue else {}
+		local state = {
 			selectedCardInstanceId = if pendingCard ~= nil then pendingCard.id else nil,
-			queuedCards = if model ~= nil then model.visibleQueue else {},
-			committed = if model ~= nil then not model.canPlan else true,
+			queuedCards = queuedCards,
+			committed = if model ~= nil then model.committed else true,
 			error = nil,
+		}
+		local disabledReasons = {}
+		local targetDescriptions = {}
+		if model ~= nil then
+			for _, card in model.hand do
+				local reason = PlanningState.cardDisabledReason(state, card, model)
+				if reason == nil and TargetSelection.needsSelection(card) then
+					if #TargetSelection.legalTargetIds(card, model) == 0 then
+						reason = "No valid targets"
+					end
+				end
+				if (networkPending or playbackActive) and reason == nil then
+					reason = "Battle update in progress"
+				end
+				disabledReasons[card.id] = reason
+				targetDescriptions[card.id] = TargetSelection.ruleDescription(card)
+			end
+		end
+		return {
+			selectedCardInstanceId = state.selectedCardInstanceId,
+			queuedCards = queuedCards,
+			committed = state.committed,
+			planningLocked = if model ~= nil then not model.canPlan else true,
+			error = nil,
+			disabledReasons = disabledReasons,
+			targetDescriptions = targetDescriptions,
+			maxQueuedCardsPerCritter = PlanningState.MaxQueuedCardsPerCritter,
 		}
 	end
 
 	local updateScreen: () -> ()
 	local sendCommand: (string, any) -> ()
+	local mapSnapshot: (any) -> boolean
 
 	local function buildProps()
 		return {
@@ -79,7 +125,10 @@ function BattleScreenController.start(playerGui: PlayerGui, battleRequest: Remot
 			energy = model.energy,
 			resolveAsset = resolveAsset,
 			onCardSelected = function(card)
-				if networkPending or not model.canPlan then
+				if networkPending then
+					return
+				end
+				if not model.canPlan then
 					return
 				end
 				if TargetSelection.needsSelection(card) then
@@ -98,6 +147,9 @@ function BattleScreenController.start(playerGui: PlayerGui, battleRequest: Remot
 				})
 			end,
 			onRemoveCard = function(cardInstanceId)
+				if networkPending or not model.canPlan then
+					return
+				end
 				sendCommand("REMOVE_QUEUED_CARD", { cardInstanceId = cardInstanceId })
 			end,
 			onReorderCard = function(cardInstanceId, newIndex)
@@ -125,16 +177,43 @@ function BattleScreenController.start(playerGui: PlayerGui, battleRequest: Remot
 				})
 			end,
 			onCommit = function()
+				if networkPending or not model.canRequestCommit then
+					return
+				end
 				sendCommand("COMMIT_PLAN", {})
 			end,
 			onReset = function()
+				if networkPending or not model.canPlan then
+					return
+				end
 				pendingCard = nil
 				selectableTargetIds = {}
 				sendCommand("CLEAR_PLAN", {})
 			end,
+			onUndo = function()
+				if networkPending or not model.canPlan then
+					return
+				end
+				local last = model.visibleQueue[#model.visibleQueue]
+				if last ~= nil then
+					sendCommand("REMOVE_QUEUED_CARD", { cardInstanceId = last.card.id })
+				end
+			end,
 			onRestart = function()
 				playbackEpoch += 1
 				playbackActive = false
+				playbackFastForward = false
+				playedEventIds = {}
+				playbackPresentation = {
+					active = false,
+					currentActionName = nil,
+					logEntries = {},
+					roundTransition = false,
+					fastForward = false,
+					actingCombatantId = nil,
+					targetCombatantIds = {},
+					feedbackByCombatantId = {},
+				}
 				task.spawn(function()
 					if networkPending or destroyed then
 						return
@@ -156,13 +235,12 @@ function BattleScreenController.start(playerGui: PlayerGui, battleRequest: Remot
 						return
 					end
 					snapshot = response.value.snapshot
-					local mapped = BattlePresentationMapper.map(snapshot)
-					if not mapped.ok then
-						message = errorMessage(mapped)
+					snapshotVersion = nil
+					if not mapSnapshot(snapshot) then
+						message = "INVALID_SNAPSHOT: Restart snapshot could not be mapped"
 						updateScreen()
 						return
 					end
-					model = mapped.value
 					pendingCard = nil
 					selectableTargetIds = {}
 					activeCombatantIds = {}
@@ -176,11 +254,20 @@ function BattleScreenController.start(playerGui: PlayerGui, battleRequest: Remot
 					options.onExitToMenu()
 				end
 			end,
+			onSkipPlayback = function()
+				if playbackActive then
+					playbackFastForward = true
+					playbackPresentation.fastForward = true
+					message = "Fast-forwarding presentation..."
+					updateScreen()
+				end
+			end,
 			selectableTargetIds = selectableTargetIds,
 			activeCombatantIds = activeCombatantIds,
 			animationCommandsByCritterId = animationCommandsByCritterId,
 			requestPending = networkPending or playbackActive,
 			message = message,
+			playbackState = playbackPresentation,
 		}
 	end
 
@@ -190,7 +277,27 @@ function BattleScreenController.start(playerGui: PlayerGui, battleRequest: Remot
 		end
 	end
 
-	local function mapSnapshot(nextSnapshot): boolean
+	local requestSnapshot: () -> ()
+	local function scheduleDeadlineRefresh()
+		deadlineEpoch += 1
+		local epoch = deadlineEpoch
+		if model == nil or model.phase ~= "PLANNING" or model.planningDeadline == nil then
+			return
+		end
+		local delaySeconds = math.max(0, model.planningDeadline - Workspace:GetServerTimeNow())
+		task.delay(delaySeconds + 0.05, function()
+			if destroyed or epoch ~= deadlineEpoch then
+				return
+			end
+			requestSnapshot()
+			updateScreen()
+		end)
+	end
+
+	mapSnapshot = function(nextSnapshot): boolean
+		if not BattleSnapshotOrder.shouldApply(snapshotVersion, nextSnapshot) then
+			return true
+		end
 		local mapped = BattlePresentationMapper.map(nextSnapshot)
 		if not mapped.ok then
 			message = errorMessage(mapped)
@@ -198,6 +305,8 @@ function BattleScreenController.start(playerGui: PlayerGui, battleRequest: Remot
 		end
 		snapshot = nextSnapshot
 		model = mapped.value
+		snapshotVersion = BattleSnapshotOrder.version(nextSnapshot)
+		scheduleDeadlineRefresh()
 		return true
 	end
 
@@ -205,7 +314,18 @@ function BattleScreenController.start(playerGui: PlayerGui, battleRequest: Remot
 		playbackEpoch += 1
 		local epoch = playbackEpoch
 		playbackActive = true
+		playbackFastForward = false
 		local playback = BattlePlayback.new(resolution.preSnapshot)
+		playbackPresentation = {
+			active = true,
+			currentActionName = playback.currentActionName,
+			logEntries = playback.logEntries,
+			roundTransition = false,
+			fastForward = false,
+			actingCombatantId = nil,
+			targetCombatantIds = {},
+			feedbackByCombatantId = {},
+		}
 		if not mapSnapshot(playback.snapshot) then
 			playbackActive = false
 			updateScreen()
@@ -215,7 +335,17 @@ function BattleScreenController.start(playerGui: PlayerGui, battleRequest: Remot
 			if destroyed or epoch ~= playbackEpoch then
 				return
 			end
-			playback = BattlePlayback.apply(playback, event)
+			if event.id ~= nil and playedEventIds[event.id] then
+				continue
+			end
+			local nextPlayback = BattlePlayback.apply(playback, event)
+			if nextPlayback == playback then
+				continue
+			end
+			playback = nextPlayback
+			if event.id ~= nil then
+				playedEventIds[event.id] = true
+			end
 			if not mapSnapshot(playback.snapshot) then
 				playbackActive = false
 				updateScreen()
@@ -230,34 +360,51 @@ function BattleScreenController.start(playerGui: PlayerGui, battleRequest: Remot
 				table.insert(activeCombatantIds, id)
 			end
 			message = playback.message
-			local animationId = nil
-			local animationCritterId = nil
-			local payload = event.payload or {}
-			if event.kind == "CARD_PLAYED" then
-				animationId = "ATTACK"
-				animationCritterId = event.sourceCombatantId
-			elseif event.kind == "DAMAGE_APPLIED" then
-				animationId = "HIT"
-				animationCritterId = payload.targetCombatantId
-			elseif event.kind == "CRITTER_DEFEATED" then
-				animationId = "DEFEAT"
-				animationCritterId = payload.combatantId
+			playbackPresentation = {
+				active = true,
+				currentActionName = playback.currentActionName,
+				logEntries = playback.logEntries,
+				roundTransition = playback.roundTransition,
+				fastForward = playbackFastForward,
+				actingCombatantId = playback.activeSourceCombatantId,
+				targetCombatantIds = playback.activeTargetCombatantIds,
+				feedbackByCombatantId = playback.feedbackByCombatantId,
+			}
+			if not playbackFastForward then
+				local animationId = nil
+				local animationCritterId = nil
+				local payload = event.payload or {}
+				if event.kind == "CARD_PLAYED" then
+					animationId = "ATTACK"
+					animationCritterId = event.sourceCombatantId
+				elseif event.kind == "DAMAGE_APPLIED" or event.kind == "STATUS_TICKED" then
+					animationId = "HIT"
+					animationCritterId = payload.targetCombatantId
+				elseif event.kind == "CRITTER_DEFEATED" then
+					animationId = "DEFEAT"
+					animationCritterId = payload.combatantId
+				end
+				if animationId ~= nil and animationCritterId ~= nil then
+					animationSequence += 1
+					animationCommandsByCritterId[animationCritterId] = {
+						id = animationId,
+						sequence = animationSequence,
+					}
+				end
+				updateScreen()
 			end
-			if animationId ~= nil and animationCritterId ~= nil then
-				animationSequence += 1
-				animationCommandsByCritterId[animationCritterId] = {
-					id = animationId,
-					sequence = animationSequence,
-				}
+			if not playbackFastForward then
+				task.wait(if event.kind == "ROUND_COMPLETED" then 0.8 else 0.2)
 			end
-			updateScreen()
-			task.wait(0.18)
 		end
 		if destroyed or epoch ~= playbackEpoch then
 			return
 		end
 		mapSnapshot(resolution.finalSnapshot)
 		playbackActive = false
+		playbackFastForward = false
+		playbackPresentation.active = false
+		playbackPresentation.fastForward = false
 		activeCombatantIds = {}
 		pendingCard = nil
 		selectableTargetIds = {}
@@ -265,11 +412,19 @@ function BattleScreenController.start(playerGui: PlayerGui, battleRequest: Remot
 		updateScreen()
 	end
 
-	local function requestSnapshot()
+	requestSnapshot = function()
 		local ok, response = pcall(function()
 			return battleRequest:InvokeServer({ kind = Protocol.RequestKinds.REQUEST_SNAPSHOT })
 		end)
 		if ok and response.ok then
+			if playbackActive then
+				playbackEpoch += 1
+				playbackActive = false
+				playbackFastForward = false
+				playbackPresentation.active = false
+				activeCombatantIds = {}
+				animationCommandsByCritterId = {}
+			end
 			mapSnapshot(response.value.snapshot)
 		end
 	end
@@ -343,6 +498,7 @@ function BattleScreenController.start(playerGui: PlayerGui, battleRequest: Remot
 		destroy = function()
 			destroyed = true
 			playbackEpoch += 1
+			deadlineEpoch += 1
 			if loading.Parent ~= nil then
 				loading:Destroy()
 			end

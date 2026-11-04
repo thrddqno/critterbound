@@ -9,8 +9,7 @@ local function requireShared(name: string)
 	return require(`../../shared/Genetics/{name}`)
 end
 
-local AppearanceResolver = requireShared("AppearanceResolver")
-local AbilityResolver = requireShared("AbilityResolver")
+local GenotypeExpressor = requireShared("GenotypeExpressor")
 
 local function clone<T>(value: T): T
 	if type(value) ~= "table" then
@@ -25,15 +24,12 @@ end
 
 local function projectCritter(instance, catalog)
 	local definition = catalog.getById(instance.definitionId)
-	local appearance = if definition == nil
+	local expression = if definition == nil
 		then nil
-		else AppearanceResolver.resolve(instance.appearanceGenome, definition.class)
-	local abilities = if definition == nil
-		then nil
-		else AbilityResolver.resolve(
+		else GenotypeExpressor.express(
+			instance.appearanceGenome,
 			instance.abilityGenome,
-			definition.class,
-			if appearance ~= nil and appearance.ok then appearance.value.speciesId else nil
+			definition.class
 		)
 	return {
 		schemaVersion = instance.schemaVersion,
@@ -44,12 +40,12 @@ local function projectCritter(instance, catalog)
 		ownerUserId = instance.ownerUserId,
 		appearanceGenome = clone(instance.appearanceGenome),
 		abilityGenome = clone(instance.abilityGenome),
-		resolvedAppearance = if appearance == nil or not appearance.ok
+		resolvedAppearance = if expression == nil or not expression.ok
 			then nil
-			else clone(appearance.value),
-		resolvedAbilityIds = if abilities == nil or not abilities.ok
+			else clone(expression.value.phenotype.appearance),
+		resolvedAbilityIds = if expression == nil or not expression.ok
 			then {}
-			else clone(abilities.value.abilityIds),
+			else clone(expression.value.phenotype.abilities.abilityIds),
 		baseStats = clone(instance.baseStats),
 		acquisition = clone(instance.acquisition),
 		breeding = clone(instance.breeding),

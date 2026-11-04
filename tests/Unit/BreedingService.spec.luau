@@ -17,7 +17,7 @@ return function(Harness)
 			local definition = Catalog.getByClass(className)
 			local genomes = GeneRegistry.defaultGenomes(className)
 			parents[index] = {
-				schemaVersion = 2,
+				schemaVersion = 3,
 				id = `critter:breeding-parent-{index}`,
 				definitionId = definition.id,
 				ownerUserId = userId,
@@ -132,6 +132,8 @@ return function(Harness)
 		store.failNext(3)
 		local failed = service.Breed(723, parents[1].id, parents[2].id, "breed.failed", revision)
 		Harness.expect(not failed.ok)
+		Harness.equal(profileService.GetOwnershipLock(parents[1].id), nil)
+		Harness.equal(profileService.GetOwnershipLock(parents[2].id), nil)
 		local after = profileService.ReadProfile(723).value
 		Harness.equal(count(after.eggs), 0)
 		Harness.equal(after.ownedCritters[parents[1].id].breeding.successfulBreedCount, 0)
@@ -157,6 +159,9 @@ return function(Harness)
 				service.Breed(724, parents[1].id, parents[2].id, "breed.concurrent.2", revision)
 		end)
 		Harness.expect(coroutine.resume(first))
+		local activeLock = profileService.GetOwnershipLock(parents[1].id)
+		Harness.expect(activeLock ~= nil)
+		Harness.equal(activeLock.operationType, "BREEDING")
 		Harness.expect(coroutine.resume(second))
 		for _ = 1, 10 do
 			if coroutine.status(first) ~= "dead" then
@@ -168,6 +173,7 @@ return function(Harness)
 		Harness.equal(coroutine.status(second), "dead")
 		Harness.expect(results[1].ok)
 		Harness.expect(Harness.hasError(results[2], "COMMAND_IN_PROGRESS"))
+		Harness.equal(profileService.GetOwnershipLock(parents[1].id), nil)
 		local profile = profileService.ReadProfile(724).value
 		Harness.equal(count(profile.eggs), 1)
 		Harness.equal(profile.ownedCritters[parents[1].id].breeding.successfulBreedCount, 1)

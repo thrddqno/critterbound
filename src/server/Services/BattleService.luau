@@ -36,12 +36,12 @@ local function findTeamState(state, teamId: string)
 	return nil
 end
 
-local function commandEnvelope(session, id: string, commandType: string, payload)
-	local teamState = findTeamState(session.state, session.aiTeamId)
+local function commandEnvelope(session, teamId: string, id: string, commandType: string, payload)
+	local teamState = findTeamState(session.state, teamId)
 	return {
 		protocolVersion = session.protocolVersion,
 		matchId = session.state.id,
-		teamId = session.aiTeamId,
+		teamId = teamId,
 		commandId = id,
 		expectedStateVersion = session.state.stateVersion,
 		expectedPlanVersion = teamState.planVersion,
@@ -65,12 +65,32 @@ local function new(dependencies)
 	local generations = {}
 	local lifecycleReceipts = {}
 	local service = {}
+	local planningSeconds = deps.planningSeconds or 45
+	local beginPlanning
+	local handleDeadline
 
 	local function currentTime(): number
 		if deps.now ~= nil then
 			return math.floor(deps.now())
 		end
 		return os.time()
+	end
+
+	local function planningTime(): number
+		if deps.planningNow ~= nil then
+			return deps.planningNow()
+		end
+		return currentTime()
+	end
+
+	local function cancelPlanningTimer(session)
+		session.timerGeneration = (session.timerGeneration or 0) + 1
+		local handle = session.timerHandle
+		session.timerHandle = nil
+		session.planningDeadline = nil
+		if handle ~= nil and deps.cancelScheduled ~= nil then
+			deps.cancelScheduled(handle)
+		end
 	end
 
 	local function completionEvidence(session, userId: number)
@@ -141,6 +161,8 @@ local function new(dependencies)
 			initiativeCombatantIds = session.latestInitiativeCombatantIds,
 			matchOutcome = session.matchOutcome,
 			statusEffects = deps.statusEffects,
+			planningDeadline = session.planningDeadline,
+			bloodMoonConfig = deps.bloodMoonConfig,
 		}
 	end
 
@@ -159,10 +181,15 @@ local function new(dependencies)
 			produced = produced.value
 		end
 		local input = produced
+		local criticalRngSeed = deps.criticalRngSeed(userId, generation)
 		local created = deps.factory.create(input, {
 			rng = deps.rng,
+			criticalRngSeed = criticalRngSeed,
 			deck = deps.deck,
 			validator = deps.validator,
+			deckRules = deps.deckRules,
+			deckBuilder = deps.deckBuilder,
+			deckShuffler = deps.deckShuffler,
 		})
 		if not created.ok then
 			return created
@@ -188,8 +215,18 @@ local function new(dependencies)
 			latestInitiativeCombatantIds = {},
 			matchOutcome = nil,
 			resolving = false,
+			connected = true,
+			planningDeadline = nil,
+			timerHandle = nil,
+			timerGeneration = 0,
 		}
 		sessions[userId] = session
+		local initialized = beginPlanning(session, userId)
+		if not initialized.ok then
+			cancelPlanningTimer(session)
+			sessions[userId] = nil
+			return initialized
+		end
 		return { ok = true, value = session }
 	end
 
@@ -205,6 +242,17 @@ local function new(dependencies)
 				return created
 			end
 			session = created.value
+		end
+		session.connected = true
+		if
+			session.state.phase == "PLANNING"
+			and session.planningDeadline ~= nil
+			and planningTime() >= session.planningDeadline
+		then
+			local expired = handleDeadline(session, userId)
+			if not expired.ok then
+				return expired
+			end
 		end
 		local projected = project(session, userId)
 		if not projected.ok then
@@ -225,6 +273,10 @@ local function new(dependencies)
 		lifecycleReceipts[userId] = receipts
 		if receipts[requestId] ~= nil then
 			return clone(receipts[requestId])
+		end
+		local existing = sessions[userId]
+		if existing ~= nil then
+			cancelPlanningTimer(existing)
 		end
 		local created = createSession(userId)
 		if not created.ok then
@@ -248,6 +300,16 @@ local function new(dependencies)
 		if session == nil then
 			return failure("NO_ACTIVE_BATTLE", "Player has no active battle")
 		end
+		if
+			session.state.phase == "PLANNING"
+			and session.planningDeadline ~= nil
+			and planningTime() >= session.planningDeadline
+		then
+			local expired = handleDeadline(session, userId)
+			if not expired.ok then
+				return expired
+			end
+		end
 		local projected = project(session, userId)
 		if not projected.ok then
 			return projected
@@ -255,14 +317,22 @@ local function new(dependencies)
 		return { ok = true, value = { snapshot = projected.value } }
 	end
 
-	local function processAiCommand(session, commandType: string, payload, suffix: string)
+	local function processInternalCommand(
+		session,
+		teamId: string,
+		ownerUserId: number,
+		commandType: string,
+		payload,
+		suffix: string
+	)
 		local envelope = commandEnvelope(
 			session,
-			`ai:{session.state.id}:r{session.state.roundNumber}:{suffix}`,
+			teamId,
+			`server:{session.state.id}:r{session.state.roundNumber}:{suffix}`,
 			commandType,
 			payload
 		)
-		local result = deps.commandProcessor.process(session, session.aiOwnerUserId, envelope, {
+		local result = deps.commandProcessor.process(session, ownerUserId, envelope, {
 			battlePlan = deps.battlePlan,
 			cardDefinitionsById = session.context.cardDefinitionsById,
 		})
@@ -272,6 +342,17 @@ local function new(dependencies)
 			session.processedCommandsById = nextSession.processedCommandsById
 		end
 		return result
+	end
+
+	local function processAiCommand(session, commandType: string, payload, suffix: string)
+		return processInternalCommand(
+			session,
+			session.aiTeamId,
+			session.aiOwnerUserId,
+			commandType,
+			payload,
+			`ai:{suffix}`
+		)
 	end
 
 	local function planAndCommitAi(session)
@@ -297,20 +378,33 @@ local function new(dependencies)
 			return failure("RESOLUTION_IN_PROGRESS", "Battle resolution is already running")
 		end
 		session.resolving = true
+		cancelPlanningTimer(session)
 		local preProjection = project(session, userId)
 		if not preProjection.ok then
 			session.resolving = false
 			return preProjection
 		end
+		local shuffle = deps.rng.shuffle
+		if deps.deckShuffler ~= nil then
+			shuffle = function(rng, values)
+				return deps.deckShuffler.shuffle(rng, values, deps.rng)
+			end
+		end
 		local resolved = deps.resolver.resolveRound(session.state, {
 			cardDefinitionsById = session.context.cardDefinitionsById,
 			deck = deps.deck,
 			economy = deps.economy,
-			shuffle = deps.rng.shuffle,
-			drawPerRound = deps.drawPerRound,
+			shuffle = shuffle,
+			drawPerRound = if deps.deckRules ~= nil
+				then deps.deckRules.DrawsPerRound
+				else deps.drawPerRound,
+			maxHandSize = if deps.deckRules ~= nil then deps.deckRules.MaxHandSize else nil,
+			defeatPolicy = if deps.deckRules ~= nil then deps.deckRules.DefeatPolicy else nil,
+			criticalRng = deps.criticalRng or deps.rng,
+			bloodMoonConfig = deps.bloodMoonConfig,
 		})
-		session.resolving = false
 		if not resolved.ok then
+			session.resolving = false
 			return resolved
 		end
 		session.state = resolved.value.state
@@ -320,9 +414,20 @@ local function new(dependencies)
 			session.completedAt = currentTime()
 			local delivered, deliveryCode = deliverCompletion(session, userId)
 			if not delivered then
+				session.resolving = false
 				return completionPendingFailure(deliveryCode)
 			end
 		end
+		if session.state.phase == "PLANNING" then
+			local initialized = beginPlanning(session, userId)
+			if not initialized.ok then
+				session.resolving = false
+				return initialized
+			end
+		else
+			cancelPlanningTimer(session)
+		end
+		session.resolving = false
 		local finalProjection = project(session, userId)
 		if not finalProjection.ok then
 			return finalProjection
@@ -339,6 +444,72 @@ local function new(dependencies)
 		}
 	end
 
+	local function commitUncommittedTeams(session)
+		for _, team in session.state.teams do
+			local teamState = findTeamState(session.state, team.id)
+			if teamState ~= nil and not teamState.committed then
+				local committed = processInternalCommand(
+					session,
+					team.id,
+					team.ownerUserId,
+					"COMMIT_PLAN",
+					{},
+					`timeout:{team.id}`
+				)
+				if not committed.ok then
+					return committed
+				end
+			end
+		end
+		return { ok = true, value = true }
+	end
+
+	handleDeadline = function(session, userId: number)
+		if sessions[userId] ~= session or session.state.phase ~= "PLANNING" then
+			return { ok = true, value = false }
+		end
+		if session.planningDeadline == nil or planningTime() < session.planningDeadline then
+			return { ok = true, value = false }
+		end
+		session.timerHandle = nil
+		local aiState = findTeamState(session.state, session.aiTeamId)
+		if aiState ~= nil and not aiState.committed then
+			local planned = planAndCommitAi(session)
+			if not planned.ok then
+				return planned
+			end
+		end
+		local committed = commitUncommittedTeams(session)
+		if not committed.ok then
+			return committed
+		end
+		if session.state.phase ~= "RESOLVING" then
+			return failure("INVALID_PHASE", "Timeout did not complete all plans")
+		end
+		return resolveCommitted(session, userId)
+	end
+
+	beginPlanning = function(session, userId: number)
+		if session.state.phase ~= "PLANNING" then
+			return failure("INVALID_PHASE", "Battle is not planning")
+		end
+		cancelPlanningTimer(session)
+		session.planningDeadline = planningTime() + planningSeconds
+		local token = session.timerGeneration
+		if deps.schedule ~= nil then
+			session.timerHandle = deps.schedule(planningSeconds, function()
+				if session.timerGeneration == token then
+					handleDeadline(session, userId)
+				end
+			end)
+		end
+		local aiState = findTeamState(session.state, session.aiTeamId)
+		if aiState ~= nil and not aiState.committed then
+			return planAndCommitAi(session)
+		end
+		return { ok = true, value = true }
+	end
+
 	local function processCommand(userId: number, envelope)
 		local flushed, flushCode = flushPendingCompletion(userId)
 		if not flushed then
@@ -350,6 +521,18 @@ local function new(dependencies)
 		end
 		if session.resolving then
 			return failure("RESOLUTION_IN_PROGRESS", "Battle resolution is already running")
+		end
+		local duplicate = type(envelope) == "table"
+			and type(envelope.commandId) == "string"
+			and session.processedCommandsById[envelope.commandId] ~= nil
+		if
+			not duplicate
+			and session.state.phase == "PLANNING"
+			and session.planningDeadline ~= nil
+			and planningTime() >= session.planningDeadline
+		then
+			handleDeadline(session, userId)
+			return failure("PLANNING_DEADLINE_EXPIRED", "Planning deadline has passed")
 		end
 		local result = deps.commandProcessor.process(session, userId, envelope, {
 			battlePlan = deps.battlePlan,
@@ -363,20 +546,7 @@ local function new(dependencies)
 		session.processedCommandsById = nextSession.processedCommandsById
 
 		local resolution = nil
-		local playerState = findTeamState(session.state, session.playerTeamId)
-		if
-			envelope.commandType == "COMMIT_PLAN"
-			and not result.value.duplicate
-			and playerState ~= nil
-			and playerState.committed
-			and session.state.phase == "PLANNING"
-		then
-			local aiResult = planAndCommitAi(session)
-			if not aiResult.ok then
-				return aiResult
-			end
-		end
-		if session.state.phase == "COMMITTED" then
+		if session.state.phase == "RESOLVING" then
 			local resolved = resolveCommitted(session, userId)
 			if not resolved.ok then
 				return resolved
@@ -417,11 +587,26 @@ local function new(dependencies)
 
 	function service.removePlayer(userId: number)
 		flushPendingCompletion(userId)
+		local session = sessions[userId]
+		if session ~= nil then
+			cancelPlanningTimer(session)
+		end
 		sessions[userId] = nil
 		lifecycleReceipts[userId] = nil
 	end
 
+	function service.playerDisconnected(userId: number)
+		local session = sessions[userId]
+		if session ~= nil then
+			session.connected = false
+		end
+	end
+
 	function service.invalidateBattle(userId: number)
+		local session = sessions[userId]
+		if session ~= nil then
+			cancelPlanningTimer(session)
+		end
 		sessions[userId] = nil
 	end
 

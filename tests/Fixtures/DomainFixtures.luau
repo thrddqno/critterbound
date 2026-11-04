@@ -1,37 +1,38 @@
 --!strict
 
 local GeneRegistry = require("../../src/shared/Genetics/GeneRegistry")
+local CombatStats = require("../../src/shared/Battle/CombatStats")
 
 local Definitions = {
 	Stone = {
-		schemaVersion = 1,
+		schemaVersion = 2,
 		id = "critter.stone.bastion",
 		displayName = "Bastion",
 		class = "Stone",
-		baseStats = { maxHealth = 120, attack = 20, defense = 35, speed = 10 },
+		baseStats = { health = 52, speed = 10, skill = 2, morale = 6 },
 		abilityIds = { "stone.guard", "stone.bulwark", "stone.quake", "stone.slam" },
 	},
 	Feral = {
-		schemaVersion = 1,
+		schemaVersion = 2,
 		id = "critter.feral.ravager",
 		displayName = "Ravager",
 		class = "Feral",
-		baseStats = { maxHealth = 80, attack = 42, defense = 12, speed = 30 },
+		baseStats = { health = 31, speed = 30, skill = 5, morale = 2 },
 		abilityIds = { "feral.strike", "feral.pounce", "feral.frenzy", "feral.rend" },
 	},
 	Verdant = {
-		schemaVersion = 1,
+		schemaVersion = 2,
 		id = "critter.verdant.bloom",
 		displayName = "Bloom",
 		class = "Verdant",
-		baseStats = { maxHealth = 95, attack = 18, defense = 20, speed = 20 },
+		baseStats = { health = 43, speed = 20, skill = 4, morale = 5 },
 		abilityIds = { "verdant.mend", "verdant.renew", "verdant.grove", "verdant.seed" },
 	},
 }
 
 local Instances = {
 	Stone = {
-		schemaVersion = 2,
+		schemaVersion = 3,
 		id = "owned.stone.1",
 		definitionId = Definitions.Stone.id,
 		ownerUserId = 101,
@@ -39,7 +40,7 @@ local Instances = {
 		abilityGenome = GeneRegistry.defaultGenomes("Stone").abilityGenome,
 	},
 	Feral = {
-		schemaVersion = 2,
+		schemaVersion = 3,
 		id = "owned.feral.1",
 		definitionId = Definitions.Feral.id,
 		ownerUserId = 101,
@@ -47,7 +48,7 @@ local Instances = {
 		abilityGenome = GeneRegistry.defaultGenomes("Feral").abilityGenome,
 	},
 	Verdant = {
-		schemaVersion = 2,
+		schemaVersion = 3,
 		id = "owned.verdant.1",
 		definitionId = Definitions.Verdant.id,
 		ownerUserId = 101,
@@ -63,6 +64,12 @@ for className, instance in Instances do
 		{ breedable = false, generation = 0, parentIds = {}, successfulBreedCount = 0 }
 	instance.tradable = false
 	instance.equipmentIds = {}
+end
+
+local function battleStats(stats)
+	local value = table.clone(stats)
+	value.maxHealth = CombatStats.maxHealth(stats.health)
+	return value
 end
 
 local CardDefinitions = {
@@ -121,8 +128,8 @@ local Combatants = {
 		slot = 1,
 		class = "Stone",
 		abilityIds = Definitions.Stone.abilityIds,
-		stats = Definitions.Stone.baseStats,
-		currentHealth = 120,
+		stats = battleStats(Definitions.Stone.baseStats),
+		currentHealth = 358,
 		statusEffects = {},
 	},
 	feral = {
@@ -132,8 +139,8 @@ local Combatants = {
 		slot = 2,
 		class = "Feral",
 		abilityIds = Definitions.Feral.abilityIds,
-		stats = Definitions.Feral.baseStats,
-		currentHealth = 80,
+		stats = battleStats(Definitions.Feral.baseStats),
+		currentHealth = 274,
 		statusEffects = {},
 	},
 	verdant = {
@@ -143,8 +150,8 @@ local Combatants = {
 		slot = 3,
 		class = "Verdant",
 		abilityIds = Definitions.Verdant.abilityIds,
-		stats = Definitions.Verdant.baseStats,
-		currentHealth = 95,
+		stats = battleStats(Definitions.Verdant.baseStats),
+		currentHealth = 322,
 		statusEffects = {},
 	},
 	enemyStone = {
@@ -154,8 +161,8 @@ local Combatants = {
 		slot = 1,
 		class = "Stone",
 		abilityIds = Definitions.Stone.abilityIds,
-		stats = Definitions.Stone.baseStats,
-		currentHealth = 120,
+		stats = battleStats(Definitions.Stone.baseStats),
+		currentHealth = 358,
 		statusEffects = {},
 	},
 	enemyFeral = {
@@ -165,8 +172,8 @@ local Combatants = {
 		slot = 2,
 		class = "Feral",
 		abilityIds = Definitions.Feral.abilityIds,
-		stats = Definitions.Feral.baseStats,
-		currentHealth = 80,
+		stats = battleStats(Definitions.Feral.baseStats),
+		currentHealth = 274,
 		statusEffects = {},
 	},
 	enemyVerdant = {
@@ -176,8 +183,8 @@ local Combatants = {
 		slot = 3,
 		class = "Verdant",
 		abilityIds = Definitions.Verdant.abilityIds,
-		stats = Definitions.Verdant.baseStats,
-		currentHealth = 95,
+		stats = battleStats(Definitions.Verdant.baseStats),
+		currentHealth = 322,
 		statusEffects = {},
 	},
 }

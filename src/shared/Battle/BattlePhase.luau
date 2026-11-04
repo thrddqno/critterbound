@@ -1,42 +1,23 @@
 --!strict
 
-export type BattlePhase =
-	"CREATED"
-	| "ROUND_START"
-	| "PLANNING"
-	| "COMMITTED"
-	| "RESOLVING"
-	| "ROUND_END"
-	| "COMPLETED"
+export type BattlePhase = "PLANNING" | "RESOLVING" | "FINISHED"
 
 local BattlePhase = table.freeze({
-	CREATED = "CREATED" :: BattlePhase,
-	ROUND_START = "ROUND_START" :: BattlePhase,
 	PLANNING = "PLANNING" :: BattlePhase,
-	COMMITTED = "COMMITTED" :: BattlePhase,
 	RESOLVING = "RESOLVING" :: BattlePhase,
-	ROUND_END = "ROUND_END" :: BattlePhase,
-	COMPLETED = "COMPLETED" :: BattlePhase,
+	FINISHED = "FINISHED" :: BattlePhase,
 })
 
 local VALID_PHASES: { [string]: boolean } = {
-	CREATED = true,
-	ROUND_START = true,
 	PLANNING = true,
-	COMMITTED = true,
 	RESOLVING = true,
-	ROUND_END = true,
-	COMPLETED = true,
+	FINISHED = true,
 }
 
 local TRANSITIONS: { [string]: { [string]: boolean } } = {
-	CREATED = { ROUND_START = true },
-	ROUND_START = { PLANNING = true },
-	PLANNING = { COMMITTED = true },
-	COMMITTED = { RESOLVING = true },
-	RESOLVING = { ROUND_END = true },
-	ROUND_END = { ROUND_START = true, COMPLETED = true },
-	COMPLETED = {},
+	PLANNING = { RESOLVING = true },
+	RESOLVING = { PLANNING = true, FINISHED = true },
+	FINISHED = {},
 }
 
 local function isValid(value: unknown): boolean

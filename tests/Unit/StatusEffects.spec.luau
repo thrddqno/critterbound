@@ -7,7 +7,7 @@ return function(Harness)
 	local function combatant(overrides)
 		local value = {
 			id = "combatant.test",
-			stats = { maxHealth = 100, attack = 20, defense = 20, speed = 20 },
+			stats = { maxHealth = 100, health = 25, speed = 20, skill = 3, morale = 3 },
 			currentHealth = 100,
 			statusEffects = {},
 			shields = {},
@@ -75,14 +75,14 @@ return function(Harness)
 	Harness.test("status duration counts the application round", function()
 		local target = combatant()
 		local ctx = context()
-		StatusEffects.apply(target, "ATTACK_UP", 10, 2, "source", 1, ctx.factory, ctx.events)
+		StatusEffects.apply(target, "DAMAGE_UP", 10, 2, "source", 1, ctx.factory, ctx.events)
 		StatusEffects.expire({ target }, 1, ctx.factory, ctx.events)
 		Harness.equal(#target.statusEffects, 1)
 		StatusEffects.expire({ target }, 2, ctx.factory, ctx.events)
 		Harness.equal(#target.statusEffects, 0)
 	end)
 
-	Harness.test("speed and attack modifiers stack deterministically", function()
+	Harness.test("speed and compatibility damage modifiers stack deterministically", function()
 		local target = combatant()
 		target.statusEffects = {
 			{
@@ -109,7 +109,7 @@ return function(Harness)
 			},
 			{
 				id = "status.3",
-				statusId = "ATTACK_UP",
+				statusId = "DAMAGE_UP",
 				sourceCombatantId = "source",
 				targetCombatantId = target.id,
 				magnitude = 10,
@@ -118,10 +118,20 @@ return function(Harness)
 				appliedRound = 1,
 				expiresAtRound = 2,
 			},
+			{
+				id = "status.4",
+				statusId = "DAMAGE_DOWN",
+				sourceCombatantId = "source",
+				targetCombatantId = target.id,
+				magnitude = 5,
+				duration = 2,
+				stackCount = 1,
+				appliedRound = 1,
+				expiresAtRound = 2,
+			},
 		}
 		Harness.equal(StatusEffects.effectiveSpeed(target), 35)
-		Harness.equal(StatusEffects.effectiveAttack(target), 40)
-		Harness.equal(StatusEffects.attackModifier(target), 20)
+		Harness.equal(StatusEffects.damageModifier(target), 15)
 	end)
 
 	Harness.test("unknown status identifiers are rejected", function()

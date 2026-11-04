@@ -41,13 +41,7 @@ return function(Harness)
 			if not queued[cardId] then
 				local instance = snapshot.cardInstancesById[cardId]
 				local definition = snapshot.cardDefinitionsById[instance.definitionId]
-				local damaging = false
-				for _, effect in definition.effects or {} do
-					if effect.kind == "DAMAGE" or effect.statusId == "POISON" then
-						damaging = true
-					end
-				end
-				if damaging and definition.energyCost <= roundState.energy then
+				if definition.energyCost <= roundState.energy then
 					local source = nil
 					for _, combatant in snapshot.battleState.combatants do
 						if combatant.critterInstanceId == instance.sourceCritterInstanceId then
@@ -143,8 +137,29 @@ return function(Harness)
 			profileService = env.profileService,
 			content = base.content,
 		})
+		local controlledAdapter = {
+			createInput = function(userId: number, generation: number)
+				local produced = adapter.createInput(userId, generation)
+				if not produced.ok then
+					return produced
+				end
+				for _, team in produced.value.teams do
+					if team.ownerUserId == userId then
+						for _, critter in team.critterInstances do
+							critter.baseStats = {
+								health = 500,
+								speed = 100,
+								skill = 100,
+								morale = 100,
+							}
+						end
+					end
+				end
+				return produced
+			end,
+		}
 		return env.createBattleService(env.contractService, {
-			inputFactory = adapter,
+			inputFactory = controlledAdapter,
 		})
 	end
 

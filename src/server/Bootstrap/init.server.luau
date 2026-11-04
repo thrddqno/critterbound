@@ -5,6 +5,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local DataStoreService = game:GetService("DataStoreService")
 local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
 
 Players.CharacterAutoLoads = false
 
@@ -25,6 +26,9 @@ local BattlePlan = require(Shared.Battle.BattlePlan)
 local RoundResolver = require(Shared.Battle.RoundResolver)
 local DeterministicRng = require(Shared.Battle.DeterministicRng)
 local Deck = require(Shared.Battle.Deck)
+local DeckBuilder = require(Shared.Battle.DeckBuilder)
+local DeckRules = require(Shared.Battle.DeckRules)
+local DeckShuffler = require(Shared.Battle.DeckShuffler)
 local RoundEconomy = require(Shared.Battle.RoundEconomy)
 local StatusEffects = require(Shared.Battle.StatusEffects)
 local DomainValidator = require(Shared.Validation.DomainValidator)
@@ -64,6 +68,7 @@ local StarterGrant = require(Server.Persistence.StarterGrant)
 local ProfileRepository = require(Server.Persistence.ProfileRepository)
 local ProfileProjector = require(Server.Persistence.ProfileProjector)
 local DevelopmentConfig = require(Server.Config.DevelopmentConfig)
+local CombatConfig = require(Server.Config.CombatConfig)
 local StudioAcquisitionFixtures = require(Server.Config.StudioAcquisitionFixtures)
 local GeneRegistry = require(Shared.Genetics.GeneRegistry)
 
@@ -227,12 +232,29 @@ local battleService = BattleService.new({
 	resolver = RoundResolver,
 	aiPlanner = TrainingPlanner,
 	rng = DeterministicRng,
+	criticalRngSeed = function()
+		local material = HttpService:GenerateGUID(false)
+		local value = 1
+		for index = 1, #material do
+			value = (value * 131 + string.byte(material, index)) % 2147483646
+		end
+		return value + 1
+	end,
 	deck = Deck,
+	deckBuilder = DeckBuilder,
+	deckRules = DeckRules.Default,
+	deckShuffler = DeckShuffler,
 	economy = RoundEconomy,
 	statusEffects = StatusEffects,
+	bloodMoonConfig = CombatConfig.BloodMoon,
 	validator = DomainValidator,
-	drawPerRound = 3,
 	now = os.time,
+	planningNow = function()
+		return Workspace:GetServerTimeNow()
+	end,
+	planningSeconds = 45,
+	schedule = task.delay,
+	cancelScheduled = task.cancel,
 	onBattleCompleted = function(evidence)
 		if contractService == nil then
 			return {
@@ -353,7 +375,7 @@ contractRequestRemote.OnServerInvoke = function(player: Player, request)
 end
 
 Players.PlayerRemoving:Connect(function(player)
-	battleService.removePlayer(player.UserId)
+	battleService.playerDisconnected(player.UserId)
 	playerDataService.removePlayer(player.UserId)
 	breedingService.removePlayer(player.UserId)
 	eggService.removePlayer(player.UserId)
@@ -438,7 +460,7 @@ local function loadPlayer(player: Player)
 				local genomes = GeneRegistry.founderGenomes(className)
 				if definition ~= nil and genomes ~= nil then
 					table.insert(grantedCritters, {
-						schemaVersion = 2,
+						schemaVersion = 3,
 						id = `critter:{HttpService:GenerateGUID(false)}`,
 						definitionId = definition.id,
 						ownerUserId = player.UserId,

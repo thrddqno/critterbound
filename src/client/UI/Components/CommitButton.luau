@@ -3,7 +3,12 @@
 local Theme = require(script.Parent.Parent.Theme)
 local CommitButton = {}
 
-export type Props = { committed: boolean, disabled: boolean, onActivated: () -> () }
+export type Props = {
+	committed: boolean,
+	disabled: boolean,
+	status: string?,
+	onActivated: () -> (),
+}
 
 function CommitButton.mount(parent: Instance, props: Props)
 	local button = Instance.new("TextButton")
@@ -19,7 +24,8 @@ function CommitButton.mount(parent: Instance, props: Props)
 	end)
 	local function update(nextProps: Props)
 		currentProps = nextProps
-		button.Text = if nextProps.committed then "Committed (local mock)" else "Commit"
+		button.Text = nextProps.status
+			or if nextProps.committed then "Plan Committed" else "Commit Plan"
 		button.BackgroundColor3 = if nextProps.disabled then Theme.Disabled else Theme.Action
 		button.Active = not nextProps.disabled
 	end

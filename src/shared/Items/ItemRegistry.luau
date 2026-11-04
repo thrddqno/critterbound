@@ -61,7 +61,7 @@ local definitions = {
 		stackable = false,
 		maxStack = 1,
 		equipmentSlot = "CRITTER",
-		modifiers = { resolve = 2 },
+		modifiers = { morale = 2 },
 		tradeable = false,
 	},
 	["collectible.training_relic"] = {

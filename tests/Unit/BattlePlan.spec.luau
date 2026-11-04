@@ -10,7 +10,10 @@ return function(Harness)
 
 	local function setup()
 		local input = Fixtures.createInput()
-		local state = Factory.create(input, { rng = Rng, deck = Deck, validator = Validator }).value
+		local state = Factory.create(
+			input,
+			{ rng = Rng, criticalRngSeed = 9001, deck = Deck, validator = Validator }
+		).value
 		return state, input.cardDefinitionsById
 	end
 
@@ -52,6 +55,24 @@ return function(Harness)
 			sourceCombatantId = source.id,
 			targetCombatantIds = targetIds,
 		}
+	end
+
+	local function cardsForCombatant(state, combatantId)
+		local combatant = Fixtures.indexById(state.combatants)[combatantId]
+		local result = {}
+		for _, card in state.cardInstances do
+			if card.sourceCritterInstanceId == combatant.critterInstanceId then
+				table.insert(result, card.id)
+			end
+		end
+		table.sort(result)
+		return result
+	end
+
+	local function fiveCardsForCombatant(state, combatantId)
+		local cardIds = cardsForCombatant(state, combatantId)
+		Harness.equal(#cardIds, 8)
+		return { cardIds[1], cardIds[2], cardIds[3], cardIds[4], cardIds[5] }
 	end
 
 	Harness.test("queue reserves energy without deducting pool", function()
@@ -108,6 +129,27 @@ return function(Harness)
 		)
 	end)
 
+	Harness.test("ally cards reject enemy targets", function()
+		local state, definitions = setup()
+		local cards = Fixtures.indexById(state.cardInstances)
+		local current = teamState(state, "team.1")
+		local allyCardId = current.handCardInstanceIds[1]
+		definitions = Harness.clone(definitions)
+		definitions[cards[allyCardId].definitionId].targetingRule = "ALLY"
+		local request = legalRequest(state, definitions, "team.1", allyCardId)
+		local enemyId = nil
+		for _, combatant in state.combatants do
+			if combatant.teamId == "team.2" then
+				enemyId = combatant.id
+				break
+			end
+		end
+		request.targetCombatantIds = { enemyId }
+		local result = BattlePlan.queueCard(state, "team.1", request, definitions)
+		Harness.expect(not result.ok)
+		Harness.expect(Harness.hasError(result, "INVALID_TARGET"))
+	end)
+
 	Harness.test("remove releases reservation and clear restores plan", function()
 		local state, definitions = setup()
 		local current = teamState(state, "team.1")
@@ -123,6 +165,103 @@ return function(Harness)
 		Harness.equal(teamState(removed.value, "team.1").reservedEnergy, 0)
 		Harness.equal(#teamState(removed.value, "team.1").queuedCards, 0)
 		Harness.expect(BattlePlan.clearPlan(queued.value, "team.1", definitions).ok)
+	end)
+
+	Harness.test("four cards per Critter is allowed and fifth is rejected", function()
+		local state, definitions = setup()
+		local current = teamState(state, "team.1")
+		local sourceId = state.teams[1].id == "team.1" and state.teams[1].combatantIds[1]
+			or state.teams[2].combatantIds[1]
+		local cardIds = fiveCardsForCombatant(state, sourceId)
+		current.handCardInstanceIds = { cardIds[1], cardIds[2], cardIds[3], cardIds[4], cardIds[5] }
+		current.energy = 100
+		local nextState = state
+		for index = 1, 4 do
+			local queued = BattlePlan.queueCard(
+				nextState,
+				"team.1",
+				legalRequest(nextState, definitions, "team.1", cardIds[index]),
+				definitions
+			)
+			Harness.expect(queued.ok)
+			nextState = queued.value
+		end
+		local fifth = BattlePlan.queueCard(
+			nextState,
+			"team.1",
+			legalRequest(nextState, definitions, "team.1", cardIds[5]),
+			definitions
+		)
+		Harness.expect(Harness.hasError(fifth, "CRITTER_QUEUE_LIMIT_EXCEEDED"))
+
+		local removed = BattlePlan.removeQueuedCard(nextState, "team.1", cardIds[2], definitions)
+		Harness.expect(removed.ok)
+		local replacement = BattlePlan.queueCard(
+			removed.value,
+			"team.1",
+			legalRequest(removed.value, definitions, "team.1", cardIds[5]),
+			definitions
+		)
+		Harness.expect(replacement.ok)
+		Harness.equal(#teamState(replacement.value, "team.1").queuedCards, 4)
+	end)
+
+	Harness.test("distinct Critters have independent queue limits", function()
+		local state, definitions = setup()
+		local team = if state.teams[1].id == "team.1" then state.teams[1] else state.teams[2]
+		local firstCards = cardsForCombatant(state, team.combatantIds[1])
+		local secondCards = cardsForCombatant(state, team.combatantIds[2])
+		local selected = {}
+		for index = 1, 4 do
+			table.insert(selected, firstCards[index])
+			table.insert(selected, secondCards[index])
+		end
+		local current = teamState(state, "team.1")
+		current.handCardInstanceIds = selected
+		current.energy = 100
+		local nextState = state
+		for _, cardId in selected do
+			local queued = BattlePlan.queueCard(
+				nextState,
+				"team.1",
+				legalRequest(nextState, definitions, "team.1", cardId),
+				definitions
+			)
+			Harness.expect(queued.ok)
+			nextState = queued.value
+		end
+		Harness.equal(#teamState(nextState, "team.1").queuedCards, 8)
+	end)
+
+	Harness.test("oversized Critter queue fails validation and commit", function()
+		local state, definitions = setup()
+		local team = if state.teams[1].id == "team.1" then state.teams[1] else state.teams[2]
+		local cardIds = fiveCardsForCombatant(state, team.combatantIds[1])
+		local current = teamState(state, "team.1")
+		current.handCardInstanceIds = { cardIds[1], cardIds[2], cardIds[3], cardIds[4], cardIds[5] }
+		current.energy = 100
+		current.queuedCards = {}
+		for index = 1, 5 do
+			local request = legalRequest(state, definitions, "team.1", cardIds[index])
+			table.insert(current.queuedCards, {
+				cardInstanceId = request.cardInstanceId,
+				sourceCombatantId = request.sourceCombatantId,
+				targetCombatantIds = request.targetCombatantIds,
+				queueIndex = index,
+			})
+		end
+		Harness.expect(
+			Harness.hasError(
+				BattlePlan.validatePlan(state, "team.1", definitions),
+				"CRITTER_QUEUE_LIMIT_EXCEEDED"
+			)
+		)
+		Harness.expect(
+			Harness.hasError(
+				BattlePlan.commitPlan(state, "team.1", definitions),
+				"CRITTER_QUEUE_LIMIT_EXCEEDED"
+			)
+		)
 	end)
 
 	Harness.test("reorder preserves card identity per Critter", function()

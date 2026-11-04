@@ -402,7 +402,12 @@ return function(Harness)
 			teams = teams,
 			critterDefinitionsById = definitions,
 			cardDefinitionsById = cards,
-		}, { rng = DeterministicRng, deck = Deck, validator = DomainValidator })
+		}, {
+			rng = DeterministicRng,
+			criticalRngSeed = 9001,
+			deck = Deck,
+			validator = DomainValidator,
+		})
 		Harness.expect(
 			battle.ok,
 			`battle creation failed: {if battle.ok then "" else battle.errors[1].code}`
@@ -421,8 +426,8 @@ return function(Harness)
 				sourceCounts[card.sourceCritterInstanceId] or 0
 			) + 1
 		end
-		for _, critterId in sourceCounts do
-			Harness.equal(critterId, 8)
+		for _, cardCount in sourceCounts do
+			Harness.equal(cardCount, 8)
 		end
 	end)
 

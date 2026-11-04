@@ -241,5 +241,36 @@ ProfileMigrations.DefaultHooks = table.freeze({
 		migrated.schemaVersion = 7
 		return migrated
 	end,
+	[7] = function(profile)
+		if type(profile.ownedCritters) ~= "table" then
+			error("Owned Critter collection is corrupt")
+		end
+		local migrated = clone(profile)
+		for _, instance in migrated.ownedCritters do
+			if
+				type(instance) ~= "table"
+				or instance.schemaVersion ~= 2
+				or type(instance.baseStats) ~= "table"
+			then
+				error("Legacy Critter stats are corrupt")
+			end
+			for _, field in { "maxHealth", "attack", "defense", "speed" } do
+				local value = instance.baseStats[field]
+				if type(value) ~= "number" or value ~= value or value < 0 or value == math.huge then
+					error("Legacy Critter stats are corrupt")
+				end
+			end
+			local definition = CritterCatalog.getById(instance.definitionId)
+			if definition == nil then
+				error("Legacy Critter definition is unknown")
+			end
+			instance.schemaVersion = 3
+			-- No inherited stat variation exists yet. Use class baseline rather than treating
+			-- legacy maxHealth as the new Health attribute.
+			instance.baseStats = clone(definition.baseStats)
+		end
+		migrated.schemaVersion = 8
+		return migrated
+	end,
 })
 return table.freeze(ProfileMigrations)

@@ -9,11 +9,15 @@ local function requireSibling(name: string)
 end
 
 local BattleEvents = requireSibling("BattleEvents")
+local BloodMoon = requireSibling("BloodMoon")
 local CardEffectResolver = requireSibling("CardEffectResolver")
 local CombatConstants = requireSibling("CombatConstants")
 local DeepClone = requireSibling("DeepClone")
 local Deck = requireSibling("Deck")
+local DeckRules = requireSibling("DeckRules")
+local DeckShuffler = requireSibling("DeckShuffler")
 local DeterministicRng = requireSibling("DeterministicRng")
+local CriticalHits = requireSibling("CriticalHits")
 local Initiative = requireSibling("Initiative")
 local RoundEconomy = requireSibling("RoundEconomy")
 local RoundTransition = requireSibling("RoundTransition")
@@ -24,10 +28,10 @@ local TargetResolver = requireSibling("TargetResolver")
 -- Optional dependencies let tests swap deck/economy/shuffle implementations.
 --
 -- Lifecycle inside one atomic call:
---   COMMITTED -> RESOLVING -> ROUND_END -> PLANNING
---   COMMITTED -> RESOLVING -> ROUND_END -> COMPLETED
+--   RESOLVING -> PLANNING
+--   RESOLVING -> FINISHED
 --
--- Guard: state.phase must be COMMITTED and the round must not already be resolved.
+-- Guard: state.phase must be RESOLVING and the round must not already be resolved.
 
 local function failure(code: string, message: string, path: string?)
 	return { ok = false, errors = { { code = code, message = message, path = path } } }
@@ -80,10 +84,12 @@ local function retireCardsFromActiveZones(state, retired, deck)
 			drawPileCardInstanceIds = teamState.drawPileCardInstanceIds or {},
 			handCardInstanceIds = teamState.handCardInstanceIds or {},
 			discardCardInstanceIds = teamState.discardCardInstanceIds or {},
+			removedCardInstanceIds = teamState.removedCardInstanceIds or {},
 		}, retired)
 		teamState.drawPileCardInstanceIds = zones.drawPileCardInstanceIds
 		teamState.handCardInstanceIds = zones.handCardInstanceIds
 		teamState.discardCardInstanceIds = zones.discardCardInstanceIds
+		teamState.removedCardInstanceIds = zones.removedCardInstanceIds
 
 		local queue = {}
 		for _, queued in teamState.queuedCards or {} do
@@ -156,12 +162,21 @@ local function evaluateOutcome(state, combatantsById)
 	return nil
 end
 
+local function containsShieldEffect(definition): boolean
+	for _, effect in definition.effects or {} do
+		if effect.kind == "SHIELD" then
+			return true
+		end
+	end
+	return false
+end
+
 local function resolveRound(state, dependencies)
 	if type(state) ~= "table" then
 		return failure("INVALID_STATE", "Battle state is required", nil)
 	end
-	if state.phase ~= "COMMITTED" then
-		return failure("INVALID_PHASE", "Battle is not in COMMITTED phase", "phase")
+	if state.phase ~= "RESOLVING" then
+		return failure("INVALID_PHASE", "Battle is not resolving", "phase")
 	end
 	if (state.lastResolvedRound or 0) >= (state.roundNumber or 1) then
 		return failure("ROUND_ALREADY_RESOLVED", "Round has already been resolved", "roundNumber")
@@ -180,11 +195,19 @@ local function resolveRound(state, dependencies)
 	local cardDefinitionsById = deps.cardDefinitionsById or {}
 	local deck = deps.deck or Deck
 	local economy = deps.economy or RoundEconomy
-	local shuffle = deps.shuffle or DeterministicRng.shuffle
+	local shuffle = deps.shuffle
+		or function(rng, values)
+			return DeckShuffler.shuffle(rng, values, DeterministicRng)
+		end
 	local drawPerRound = deps.drawPerRound or CombatConstants.DrawPerRound
+	local maxHandSize = deps.maxHandSize or DeckRules.Default.MaxHandSize
+	local defeatPolicy = deps.defeatPolicy or DeckRules.Default.DefeatPolicy
+	local bloodMoonConfig = deps.bloodMoonConfig
 
 	local nextState = DeepClone.clone(state)
-	nextState.phase = "RESOLVING"
+	if nextState.criticalRng == nil then
+		return failure("MISSING_CRITICAL_RNG", "Critical RNG state is required", "criticalRng")
+	end
 	local events = {}
 	local factory = BattleEvents.create(nextState.id, nextState.eventVersion or 0)
 	local roundNumber = nextState.roundNumber or 1
@@ -192,19 +215,79 @@ local function resolveRound(state, dependencies)
 	local cardsById = indexCards(nextState)
 	local teamsById = indexTeams(nextState)
 	local combatantOrder = orderedCombatants(nextState, teamsById)
+	local criticalRng = deps.criticalRng or DeterministicRng
+	local function rollCritical(source): boolean
+		local nextCriticalRng, isCritical =
+			CriticalHits.roll(nextState.criticalRng, source.stats.morale or 0, criticalRng)
+		nextState.criticalRng = nextCriticalRng
+		return isCritical
+	end
 
 	local resolvedByTeam = {}
 	local defeated = {}
 	local matchOutcome = nil
 
 	local cardsBySource = {}
+	local queuedTeamIdByCardInstanceId = {}
 	for _, teamState in sortedTeamStates(nextState, teamsById) do
 		for _, queued in teamState.queuedCards or {} do
 			local list = cardsBySource[queued.sourceCombatantId] or {}
 			table.insert(list, queued)
 			cardsBySource[queued.sourceCombatantId] = list
+			queuedTeamIdByCardInstanceId[queued.cardInstanceId] = teamState.teamId
 			resolvedByTeam[teamState.teamId] = resolvedByTeam[teamState.teamId] or {}
 			table.insert(resolvedByTeam[teamState.teamId], queued.cardInstanceId)
+		end
+	end
+	for _, queuedCards in cardsBySource do
+		table.sort(queuedCards, function(a, b)
+			return a.queueIndex < b.queueIndex
+		end)
+	end
+
+	-- Preparation order is independent of initiative: team index, source slot, source ID,
+	-- queue index, authored effect index, then TargetResolver's deterministic target order.
+	-- Every valid shield is established before INITIATIVE_DETERMINED is emitted.
+	local preparationOrder = 0
+	local function nextPreparationOrder(): number
+		preparationOrder += 1
+		return preparationOrder
+	end
+	for _, source in combatantOrder do
+		if source.currentHealth > 0 then
+			for _, card in cardsBySource[source.id] or {} do
+				local cardInstance = cardsById[card.cardInstanceId]
+				local definition = if cardInstance ~= nil
+					then cardDefinitionsById[cardInstance.definitionId]
+					else nil
+				if
+					cardInstance ~= nil
+					and definition ~= nil
+					and cardInstance.sourceCritterInstanceId == source.critterInstanceId
+					and queuedTeamIdByCardInstanceId[card.cardInstanceId] == source.teamId
+					and containsShieldEffect(definition)
+				then
+					local targetResolution = TargetResolver.resolve(
+						definition.targetingRule,
+						source,
+						card.targetCombatantIds or {},
+						combatantsById
+					)
+					if not targetResolution.skipped then
+						CardEffectResolver.prepareShields(
+							source,
+							targetResolution.targetIds,
+							definition,
+							combatantsById,
+							roundNumber,
+							factory,
+							events,
+							card.cardInstanceId,
+							nextPreparationOrder
+						)
+					end
+				end
+			end
 		end
 	end
 
@@ -212,9 +295,6 @@ local function resolveRound(state, dependencies)
 	for _, combatant in combatantOrder do
 		local queuedCards = cardsBySource[combatant.id]
 		if queuedCards ~= nil and #queuedCards > 0 then
-			table.sort(queuedCards, function(a, b)
-				return a.queueIndex < b.queueIndex
-			end)
 			local team = teamsById[combatant.teamId]
 			table.insert(entries, {
 				combatantId = combatant.id,
@@ -223,7 +303,7 @@ local function resolveRound(state, dependencies)
 				speed = StatusEffects.effectiveSpeed(combatant),
 				currentHealth = combatant.currentHealth,
 				skill = combatant.stats.skill or 0,
-				resolve = combatant.stats.resolve or 0,
+				morale = combatant.stats.morale or 0,
 				queuedCards = queuedCards,
 			})
 		end
@@ -344,7 +424,13 @@ local function resolveRound(state, dependencies)
 						combatantsById,
 						roundNumber,
 						factory,
-						events
+						events,
+						{
+							skillComboActive = #entry.queuedCards
+								>= CombatConstants.SkillComboMinimumCards,
+							rollCritical = rollCritical,
+							skipShieldEffects = true,
+						}
 					)
 					for _, targetId in defeatedTargets do
 						emitDefeat(targetId)
@@ -356,13 +442,23 @@ local function resolveRound(state, dependencies)
 		end
 	end
 
-	-- A completed match is terminal. Round-end poison and expiry only run while the match
-	-- is still live. Poison is simultaneous; victory is evaluated once after all ticks.
-	nextState.phase = "ROUND_END"
+	-- A card-completed match is terminal. Otherwise poison and Blood Moon are simultaneous
+	-- batches, with one final victory evaluation after both. Expiry runs only for a live match.
 	if matchOutcome == nil then
 		local poisonDefeated =
 			StatusEffects.tickPoison(combatantOrder, roundNumber, factory, events)
 		for _, combatantId in poisonDefeated do
+			emitDefeat(combatantId)
+		end
+		local bloodMoon = BloodMoon.apply(
+			nextState,
+			combatantOrder,
+			roundNumber,
+			bloodMoonConfig,
+			factory,
+			events
+		)
+		for _, combatantId in bloodMoon.defeatedCombatantIds do
 			emitDefeat(combatantId)
 		end
 		matchOutcome = evaluateOutcome(nextState, combatantsById)
@@ -372,11 +468,13 @@ local function resolveRound(state, dependencies)
 	end
 
 	nextState.lastResolvedRound = roundNumber
-	local retired = retiredCardInstanceIds(nextState)
+	local retired = if defeatPolicy == "REMOVE_IMMEDIATELY"
+		then retiredCardInstanceIds(nextState)
+		else {}
 
 	if matchOutcome ~= nil then
 		retireCardsFromActiveZones(nextState, retired, deck)
-		nextState.phase = "COMPLETED"
+		nextState.phase = "FINISHED"
 		nextState.stateVersion = (nextState.stateVersion or 0) + 1
 		table.insert(
 			events,
@@ -403,6 +501,7 @@ local function resolveRound(state, dependencies)
 		economy = economy,
 		shuffle = shuffle,
 		drawPerRound = drawPerRound,
+		maxHandSize = maxHandSize,
 		retiredCardInstanceIds = retired,
 	})
 	if not transition.ok then

@@ -45,7 +45,7 @@ local function makeInstance(definition, ownerUserId: number, suffix: string, fou
 		else GeneRegistry.defaultGenomes(definition.class)
 	assert(genomes ~= nil, `Missing genomes for {definition.class}`)
 	return {
-		schemaVersion = 2,
+		schemaVersion = 3,
 		id = `owned.training.{string.lower(definition.class)}.{suffix}`,
 		definitionId = definition.id,
 		ownerUserId = ownerUserId,

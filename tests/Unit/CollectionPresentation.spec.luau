@@ -13,7 +13,7 @@ return function(Harness)
 					definitionId = "definition.one",
 					displayName = "Pebble",
 					class = "Stone",
-					baseStats = { maxHealth = 120, speed = 10, skill = 2, resolve = 6 },
+					baseStats = { health = 52, speed = 10, skill = 2, morale = 6 },
 					resolvedAppearance = {
 						resolvedGenesBySlot = { color = "gene.appearance.color.stone.default" },
 					},
@@ -32,7 +32,7 @@ return function(Harness)
 			},
 		})
 		Harness.equal(result.revision, 4)
-		Harness.equal(result.critters[1].statsText, "HP 120  Speed 10  Skill 2  Resolve 6")
+		Harness.equal(result.critters[1].statsText, "Health 52  Speed 10  Skill 2  Morale 6")
 		Harness.equal(result.critters[1].equipmentText, "Training Charm")
 		Harness.equal(result.critters[1].breedingText, "Restricted")
 		Harness.equal(result.critters[1].selectedTeamSlot, 1)

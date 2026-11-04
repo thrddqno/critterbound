@@ -63,6 +63,26 @@ return function(Harness)
 		Harness.deepEqual(critters, beforeCritters)
 	end)
 
+	Harness.test("queue presentation can expose empty per-Critter slot groups", function()
+		local groups = QueuePresentation.group({}, critters, true)
+		Harness.equal(#groups, 3)
+		Harness.equal(groups[1].sourceCombatantId, critters[1].id)
+		Harness.equal(#groups[1].entries, 0)
+	end)
+
+	Harness.test("queue rail always exposes four ordered slots", function()
+		local groups = QueuePresentation.group({
+			entry("second", critters[1].id, 2),
+			entry("first", critters[1].id, 1),
+		}, critters)
+		local slots = QueuePresentation.slots(groups[1], 4)
+		Harness.equal(#slots, 4)
+		Harness.equal(slots[1].entry.card.id, "first")
+		Harness.equal(slots[2].entry.card.id, "second")
+		Harness.expect(slots[3].entry == nil)
+		Harness.expect(slots[4].entry == nil)
+	end)
+
 	Harness.test("queue presentation never mutates entries", function()
 		local entries = {
 			entry("second", critters[1].id, 2),

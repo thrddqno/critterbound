@@ -56,6 +56,32 @@ return function(Harness)
 		)
 	end)
 
+	Harness.test("genome validator pins every gene to registered content version", function()
+		local genomes = GeneRegistry.defaultGenomes("Stone")
+		Harness.equal(GeneRegistry.ContentVersion, 1)
+		Harness.expect(
+			GenomeValidator.validate(
+				genomes.appearanceGenome,
+				genomes.abilityGenome,
+				"Stone",
+				GeneRegistry.ContentVersion
+			).ok
+		)
+		Harness.expect(
+			Harness.hasError(
+				GenomeValidator.validate(
+					genomes.appearanceGenome,
+					genomes.abilityGenome,
+					"Stone",
+					2
+				),
+				"UNSUPPORTED_GENE_CONTENT_VERSION"
+			)
+		)
+		local definition = GeneRegistry.get(genomes.appearanceGenome.slots.body.D)
+		Harness.equal(definition.contentVersion, GeneRegistry.ContentVersion)
+	end)
+
 	Harness.test(
 		"appearance resolver enforces class and body rig with deterministic fallback",
 		function()

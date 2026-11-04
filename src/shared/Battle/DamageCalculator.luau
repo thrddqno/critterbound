@@ -14,9 +14,12 @@ local CombatConstants = requireSibling("CombatConstants")
 export type Breakdown = {
 	baseDamage: number,
 	classMultiplier: number,
-	attackModifier: number,
-	defenseModifier: number,
-	statusMultiplier: number,
+	sameClassMultiplier: number,
+	skillMultiplier: number,
+	damageModifier: number,
+	modifiedDamage: number,
+	criticalMultiplier: number,
+	isCritical: boolean,
 	damageBeforeShield: number,
 	shieldAbsorbed: number,
 	hpDamage: number,
@@ -25,36 +28,63 @@ export type Breakdown = {
 -- Documented pipeline. Rounding happens once, after all multipliers and flat modifiers.
 --   1. base card damage
 --   2. class advantage/disadvantage
---   3. attack modifiers (flat, signed)
---   4. defensive modifier (flat, floor(defense * 0.5))
---   5. status vulnerability multiplier (1.0 in Run 4B)
---   6. shield absorption (handled by absorbShields)
---   7. HP damage, clamped to remaining health by the caller
+--   3. same-class multiplier
+--   4. Skill combo multiplier
+--   5. flat outgoing damage modifiers (signed), then clamp to zero
+--   6. critical multiplier (1.5 on a successful eligible roll; otherwise 1.0)
+--   7. floor once
+--   8. shield absorption (handled by absorbShields)
+--   9. HP damage, clamped to remaining health by the caller
 local function calculate(
+	source,
 	target,
 	baseDamage: number,
 	cardClass: string,
-	attackModifier: number
+	damageModifier: number,
+	skillComboActive: boolean?,
+	criticalRollSucceeded: boolean?
 ): Breakdown
 	local classMultiplier = ClassAdvantage.multiplier(cardClass, target.class)
-	local afterClass = baseDamage * classMultiplier
-	local afterAttack = math.max(0, afterClass + attackModifier)
-	local defenseModifier =
-		math.floor((target.stats.defense or 0) * CombatConstants.DefenseReductionRatio)
-	local afterDefense = math.max(0, afterAttack - defenseModifier)
-	local statusMultiplier = 1.0
-	local damageBeforeShield = math.max(0, math.floor(afterDefense * statusMultiplier))
+	local sameClassMultiplier = if cardClass == source.class
+		then CombatConstants.SameClassMultiplier
+		else CombatConstants.CrossClassMultiplier
+	local skillMultiplier = if skillComboActive == true
+		then 1 + CombatConstants.SkillMultiplierPerPoint * (source.stats.skill or 0)
+		else 1
+	local modifiedDamage = math.max(
+		0,
+		baseDamage * classMultiplier * sameClassMultiplier * skillMultiplier + damageModifier
+	)
+	local isCritical = criticalRollSucceeded == true and modifiedDamage > 0
+	local appliedCriticalMultiplier = if isCritical
+		then CombatConstants.CriticalDamageMultiplier
+		else CombatConstants.NormalDamageMultiplier
+	local damageBeforeShield = math.floor(modifiedDamage * appliedCriticalMultiplier)
 
 	return {
 		baseDamage = baseDamage,
 		classMultiplier = classMultiplier,
-		attackModifier = attackModifier,
-		defenseModifier = defenseModifier,
-		statusMultiplier = statusMultiplier,
+		sameClassMultiplier = sameClassMultiplier,
+		skillMultiplier = skillMultiplier,
+		damageModifier = damageModifier,
+		modifiedDamage = modifiedDamage,
+		criticalMultiplier = appliedCriticalMultiplier,
+		isCritical = isCritical,
 		damageBeforeShield = damageBeforeShield,
 		shieldAbsorbed = 0,
 		hpDamage = damageBeforeShield,
 	}
+end
+
+local function shieldAmount(
+	baseAmount: number,
+	cardClass: string,
+	sourceClass: string
+): (number, number)
+	local sameClassMultiplier = if cardClass == sourceClass
+		then CombatConstants.SameClassMultiplier
+		else CombatConstants.CrossClassMultiplier
+	return math.max(0, math.floor(baseAmount * sameClassMultiplier)), sameClassMultiplier
 end
 
 export type Absorption = {
@@ -95,5 +125,6 @@ end
 
 return table.freeze({
 	calculate = calculate,
+	shieldAmount = shieldAmount,
 	absorbShields = absorbShields,
 })

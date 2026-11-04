@@ -16,7 +16,7 @@ local GenomeValidator = requireShared("Genetics", "GenomeValidator")
 local ContractCatalog = requireShared("Definitions", "ContractCatalog")
 local AcquisitionPools = requireShared("Definitions", "AcquisitionPools")
 
-local CURRENT_VERSION = 7
+local CURRENT_VERSION = 8
 local MAX_OWNED_CRITTERS = 500
 local MAX_ACQUISITION_OPERATIONS = 128
 local MAX_ACQUISITION_SEED = 2147483646
@@ -76,21 +76,14 @@ local function validStats(stats: any): boolean
 	if type(stats) ~= "table" then
 		return false
 	end
-	for _, field in { "maxHealth", "attack", "defense", "speed" } do
+	for _, field in { "health", "speed", "skill", "morale" } do
 		local value = stats[field]
 		if type(value) ~= "number" or value ~= value or value < 0 or value == math.huge then
 			return false
 		end
 	end
-	if stats.maxHealth <= 0 then
-		return false
-	end
-	for _, field in { "skill", "resolve" } do
-		local value = stats[field]
-		if
-			value ~= nil
-			and (type(value) ~= "number" or value ~= value or value < 0 or value == math.huge)
-		then
+	for _, field in { "maxHealth", "attack", "defense", "resolve" } do
+		if stats[field] ~= nil then
 			return false
 		end
 	end
@@ -98,7 +91,7 @@ local function validStats(stats: any): boolean
 end
 
 local function validateInstance(instance: any, id: string, userId: number, definitionsById: any)
-	if type(instance) ~= "table" or instance.schemaVersion ~= 2 or instance.id ~= id then
+	if type(instance) ~= "table" or instance.schemaVersion ~= 3 or instance.id ~= id then
 		return failure(
 			"INVALID_CRITTER_INSTANCE",
 			"Owned Critter record is malformed",

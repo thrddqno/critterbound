@@ -77,16 +77,29 @@ return function(Harness)
 		Harness.equal(Fixtures.findTeamState(result.value.state, "team.1").energy, 10)
 	end)
 
-	Harness.test("draw respects the hand cap and leaves excess in the draw pile", function()
-		local state = Fixtures.createState()
-		local teamState = Fixtures.findTeamState(state, "team.1")
-		teamState.handCardInstanceIds = ids(9, "card.hand")
-		teamState.drawPileCardInstanceIds = ids(4, "card.draw")
-		local result = resolve(state)
-		Harness.expect(result.ok)
-		local nextTeam = Fixtures.findTeamState(result.value.state, "team.1")
-		Harness.equal(#nextTeam.handCardInstanceIds, 10)
-		Harness.equal(#nextTeam.drawPileCardInstanceIds, 3)
+	Harness.test("draw respects the hand cap at nine cards", function()
+		local cases = {
+			{ handSize = 6, drawnCount = 3 },
+			{ handSize = 7, drawnCount = 2 },
+			{ handSize = 8, drawnCount = 1 },
+			{ handSize = 9, drawnCount = 0 },
+		}
+		for _, case in cases do
+			local state = Fixtures.createState()
+			local teamState = Fixtures.findTeamState(state, "team.1")
+			teamState.handCardInstanceIds = ids(case.handSize, "card.hand")
+			teamState.drawPileCardInstanceIds = ids(4, "card.draw")
+			local result = resolve(state)
+			Harness.expect(result.ok)
+			local nextTeam = Fixtures.findTeamState(result.value.state, "team.1")
+			Harness.equal(#nextTeam.handCardInstanceIds, 9)
+			Harness.equal(#nextTeam.drawPileCardInstanceIds, 4 - case.drawnCount)
+			Harness.equal(nextTeam.lastDrawResult.requestedCount, 3)
+			Harness.equal(nextTeam.lastDrawResult.drawnCount, case.drawnCount)
+			Harness.equal(nextTeam.lastDrawResult.isPartial, case.drawnCount < 3)
+			Harness.equal(nextTeam.pendingDiscardCount, nil)
+			Harness.equal(result.value.state.planningSubphase, nil)
+		end
 	end)
 
 	Harness.test("a completed match does not run the round transition", function()
@@ -103,7 +116,7 @@ return function(Harness)
 		end
 		local result = resolve(state)
 		Harness.expect(result.ok)
-		Harness.equal(result.value.state.phase, "COMPLETED")
+		Harness.equal(result.value.state.phase, "FINISHED")
 		Harness.equal(result.value.state.roundNumber, 1)
 		Harness.equal(Fixtures.findTeamState(result.value.state, "team.1").energy, 3)
 	end)
@@ -117,7 +130,7 @@ return function(Harness)
 		Harness.expect(Harness.hasError(duplicatePhase, "INVALID_PHASE"))
 
 		local duplicateRound = first.value.state
-		duplicateRound.phase = "COMMITTED"
+		duplicateRound.phase = "RESOLVING"
 		for _, teamState in duplicateRound.teamRoundStates do
 			teamState.committed = true
 		end

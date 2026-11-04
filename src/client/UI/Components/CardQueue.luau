@@ -8,6 +8,7 @@ local CardQueue = {}
 export type Props = {
 	entries: { any },
 	critters: { any },
+	capacity: number,
 	locked: boolean,
 	compact: boolean?,
 	onRemove: (string) -> (),
@@ -19,6 +20,7 @@ function CardQueue.mount(parent: Instance, props: Props)
 	root.Name = "CardQueue"
 	root.AutomaticCanvasSize = Enum.AutomaticSize.X
 	root.BackgroundColor3 = Theme.Panel
+	root.BackgroundTransparency = 0.16
 	root.BorderColor3 = Theme.Border
 	root.BorderSizePixel = 1
 	root.CanvasSize = UDim2.fromOffset(0, 0)
@@ -28,7 +30,8 @@ function CardQueue.mount(parent: Instance, props: Props)
 
 	local layout = Instance.new("UIListLayout")
 	layout.FillDirection = Enum.FillDirection.Horizontal
-	layout.Padding = UDim.new(0, 6)
+	layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	layout.Padding = UDim.new(0, 8)
 	layout.SortOrder = Enum.SortOrder.LayoutOrder
 	layout.Parent = root
 
@@ -48,7 +51,7 @@ function CardQueue.mount(parent: Instance, props: Props)
 
 	local function update(nextProps: Props)
 		clear()
-		local groups = QueuePresentation.group(nextProps.entries, nextProps.critters)
+		local groups = QueuePresentation.group(nextProps.entries, nextProps.critters, true)
 		if #groups == 0 then
 			local empty = Instance.new("TextLabel")
 			empty.Name = "EmptyQueue"
@@ -63,31 +66,47 @@ function CardQueue.mount(parent: Instance, props: Props)
 			return
 		end
 
-		local cardWidth = if nextProps.compact then 116 else 136
+		local cardWidth = if nextProps.compact then 62 else 74
 		for groupIndex, group in groups do
 			local groupFrame = Instance.new("Frame")
 			groupFrame.Name = group.sourceCombatantId
 			groupFrame.BackgroundColor3 = Theme.PanelAlt
+			groupFrame.BackgroundTransparency = 0.08
 			groupFrame.BorderColor3 = Theme.Ally
 			groupFrame.BorderSizePixel = 1
 			groupFrame.LayoutOrder = groupIndex
-			groupFrame.Size =
-				UDim2.new(0, math.max(190, #group.entries * (cardWidth + 4) + 8), 1, -4)
+			groupFrame.Size = UDim2.new(0, nextProps.capacity * (cardWidth + 4) + 8, 1, -4)
 			groupFrame.Parent = root
 			table.insert(nodes, groupFrame)
 
 			local heading = Instance.new("TextLabel")
 			heading.BackgroundTransparency = 1
 			heading.Position = UDim2.fromOffset(6, 2)
-			heading.Size = UDim2.new(1, -12, 0, 18)
-			heading.Text = `{group.displayName} · {group.sourceCombatantId}`
+			heading.Size = UDim2.new(1, -12, 0, 20)
+			heading.Text = `{group.displayName}   {#group.entries}/{nextProps.capacity}`
 			heading.TextColor3 = Theme.Text
 			heading.TextSize = 11
 			heading.TextTruncate = Enum.TextTruncate.AtEnd
 			heading.TextXAlignment = Enum.TextXAlignment.Left
 			heading.Parent = groupFrame
 
-			for entryIndex, entry in group.entries do
+			for _, slot in QueuePresentation.slots(group, nextProps.capacity) do
+				local entryIndex = slot.index
+				local entry = slot.entry
+				if entry == nil then
+					local emptySlot = Instance.new("TextLabel")
+					emptySlot.Name = `EmptyQueueSlot{entryIndex}`
+					emptySlot.BackgroundColor3 = Theme.Panel
+					emptySlot.BorderColor3 = Theme.Border
+					emptySlot.Position =
+						UDim2.fromOffset(6 + (entryIndex - 1) * (cardWidth + 4), 22)
+					emptySlot.Size = UDim2.new(0, cardWidth, 1, -26)
+					emptySlot.Text = `{entryIndex}\n—`
+					emptySlot.TextColor3 = Theme.MutedText
+					emptySlot.TextSize = if nextProps.compact then 10 else 11
+					emptySlot.Parent = groupFrame
+					continue
+				end
 				local button = Instance.new("TextButton")
 				button.Name = entry.card.id
 				button.BackgroundColor3 = if nextProps.locked
@@ -95,11 +114,11 @@ function CardQueue.mount(parent: Instance, props: Props)
 					else Theme.Background
 				button.BorderColor3 = Theme.Border
 				button.Position = UDim2.fromOffset(6 + (entryIndex - 1) * (cardWidth + 4), 22)
-				button.Size = UDim2.new(0, cardWidth - 34, 1, -26)
+				button.Size = UDim2.new(0, cardWidth, 1, -26)
 				button.Text =
-					`#{entry.sourceOrder}  {entry.card.displayName}\nEnergy {entry.card.energyCost}{if nextProps.locked
+					`{entry.sourceOrder}. {entry.card.displayName}\nCost {entry.card.energyCost}{if nextProps.locked
 						then ""
-						else " · Remove"}`
+						else "\nTap: remove"}`
 				button.TextColor3 = Theme.Text
 				button.TextSize = if nextProps.compact then 10 else 11
 				button.TextTruncate = Enum.TextTruncate.AtEnd
@@ -119,11 +138,13 @@ function CardQueue.mount(parent: Instance, props: Props)
 					reorder.Name = if direction < 0 then "MoveLeft" else "MoveRight"
 					reorder.BackgroundColor3 = Theme.Panel
 					reorder.BorderColor3 = Theme.Border
-					reorder.Position = UDim2.fromOffset(
-						6 + (entryIndex - 1) * (cardWidth + 4) + cardWidth - 32,
-						22 + (offset - 1) * 24
+					reorder.Position = UDim2.new(
+						0,
+						6 + (entryIndex - 1) * (cardWidth + 4) + (offset - 1) * 20,
+						1,
+						-20
 					)
-					reorder.Size = UDim2.fromOffset(32, 22)
+					reorder.Size = UDim2.fromOffset(20, 18)
 					reorder.Text = if direction < 0 then "<" else ">"
 					reorder.TextColor3 = Theme.Text
 					reorder.Active = not nextProps.locked

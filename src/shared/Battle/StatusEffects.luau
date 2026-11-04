@@ -24,8 +24,8 @@ export type StatusEffect = {
 
 local STATUS_IDS: { [string]: boolean } = {
 	POISON = true,
-	ATTACK_UP = true,
-	ATTACK_DOWN = true,
+	DAMAGE_UP = true,
+	DAMAGE_DOWN = true,
 	SPEED_UP = true,
 	SPEED_DOWN = true,
 }
@@ -60,21 +60,17 @@ local function effectiveSpeed(combatant): number
 	return math.max(0, speed)
 end
 
-local function effectiveAttack(combatant): number
-	local attack = combatant.stats.attack or 0
+local function damageModifier(combatant): number
+	local modifier = 0
 	for _, effect in combatant.statusEffects or {} do
 		local contribution = (effect.magnitude or 0) * (effect.stackCount or 1)
-		if effect.statusId == "ATTACK_UP" then
-			attack += contribution
-		elseif effect.statusId == "ATTACK_DOWN" then
-			attack -= contribution
+		if effect.statusId == "DAMAGE_UP" then
+			modifier += contribution
+		elseif effect.statusId == "DAMAGE_DOWN" then
+			modifier -= contribution
 		end
 	end
-	return math.max(0, attack)
-end
-
-local function attackModifier(combatant): number
-	return effectiveAttack(combatant) - (combatant.stats.attack or 0)
+	return modifier
 end
 
 -- Duration counts round ends including the application round.
@@ -230,8 +226,7 @@ return table.freeze({
 	isKnownStatus = isKnownStatus,
 	findStatus = findStatus,
 	effectiveSpeed = effectiveSpeed,
-	effectiveAttack = effectiveAttack,
-	attackModifier = attackModifier,
+	damageModifier = damageModifier,
 	apply = apply,
 	tickPoison = tickPoison,
 	expire = expire,

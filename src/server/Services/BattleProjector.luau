@@ -40,7 +40,7 @@ local function project(state, authenticatedUserId: number, context)
 	local shieldsByCombatantId = {}
 	local effectiveSpeedByCombatantId = {}
 	local viewerPlanVersion = 0
-	local revealPlans = state.phase == "COMMITTED"
+	local revealPlans = state.phase ~= "PLANNING"
 	for _, combatant in state.combatants do
 		local shieldTotal = 0
 		for _, shield in combatant.shields or {} do
@@ -88,6 +88,7 @@ local function project(state, authenticatedUserId: number, context)
 			handCount = #teamState.handCardInstanceIds,
 			drawPileCount = #(teamState.drawPileCardInstanceIds or {}),
 			discardCount = #(teamState.discardCardInstanceIds or {}),
+			removedCount = #(teamState.removedCardInstanceIds or {}),
 			committed = teamState.committed,
 		})
 	end
@@ -103,6 +104,8 @@ local function project(state, authenticatedUserId: number, context)
 				id = state.id,
 				phase = state.phase,
 				roundNumber = state.roundNumber,
+				planningDeadline = context.planningDeadline,
+				bloodMoon = clone(context.bloodMoonConfig),
 				teams = clone(state.teams),
 				combatants = clone(state.combatants),
 				teamRoundStates = projectedRoundStates,

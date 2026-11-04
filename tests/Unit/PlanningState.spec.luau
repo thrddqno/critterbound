@@ -26,12 +26,13 @@ return function(Harness)
 	end)
 
 	Harness.test("calculates energy preview and rejects over budget", function()
-		local first = PlanningState.queueCard(PlanningState.new(), model.hand[3], model)
+		local first = PlanningState.queueCard(PlanningState.new(), model.hand[2], model)
 		Harness.expect(first.ok)
 		local preview = PlanningState.energy(model, first.state)
 		Harness.equal(preview.allocated, 2)
 		Harness.equal(preview.remaining, 1)
-		local secondFeral = model.hand[4]
+		local secondFeral = Harness.clone(model.hand[2])
+		secondFeral.id = "unaffordable.feral"
 		local rejected = PlanningState.queueCard(first.state, secondFeral, model)
 		Harness.expect(not rejected.ok)
 		Harness.equal(rejected.error, "INSUFFICIENT_ENERGY")
@@ -39,10 +40,81 @@ return function(Harness)
 
 	Harness.test("preserves per-Critter queue order after removal", function()
 		local first = PlanningState.queueCard(PlanningState.new(), model.hand[1], model)
-		local second = PlanningState.queueCard(first.state, model.hand[2], model)
+		local secondCard = Harness.clone(model.hand[1])
+		secondCard.id = "same-source.second"
+		local second = PlanningState.queueCard(first.state, secondCard, model)
 		Harness.equal(second.state.queuedCards[2].sourceOrder, 2)
 		local removed = PlanningState.removeCard(second.state, model.hand[1].id)
 		Harness.equal(removed.state.queuedCards[1].sourceOrder, 1)
+	end)
+
+	Harness.test("undo removes last action and clear removes all actions", function()
+		local first = PlanningState.queueCard(PlanningState.new(), model.hand[1], model)
+		local second = PlanningState.queueCard(first.state, model.hand[2], model)
+		local undone = PlanningState.undo(second.state)
+		Harness.expect(undone.ok)
+		Harness.equal(#undone.state.queuedCards, 1)
+		Harness.equal(undone.state.queuedCards[1].card.id, model.hand[1].id)
+		local cleared = PlanningState.clear(undone.state)
+		Harness.expect(cleared.ok)
+		Harness.equal(#cleared.state.queuedCards, 0)
+		Harness.equal(PlanningState.undo(cleared.state).error, "QUEUE_EMPTY")
+	end)
+
+	Harness.test("card reasons explain queued unaffordable and defeated cards", function()
+		local queued = PlanningState.queueCard(PlanningState.new(), model.hand[2], model)
+		Harness.equal(
+			PlanningState.cardDisabledReason(queued.state, model.hand[2], model),
+			"Queued — tap queued card to remove"
+		)
+		local unaffordable = Harness.clone(model.hand[2])
+		unaffordable.id = "unaffordable.reason"
+		Harness.equal(
+			PlanningState.cardDisabledReason(queued.state, unaffordable, model),
+			`Needs {unaffordable.energyCost} energy`
+		)
+		local defeatedModel = Harness.clone(model)
+		for _, critter in defeatedModel.critters do
+			if critter.id == defeatedModel.hand[1].sourceCombatantId then
+				critter.defeated = true
+			end
+		end
+		Harness.equal(
+			PlanningState.cardDisabledReason(
+				PlanningState.new(),
+				defeatedModel.hand[1],
+				defeatedModel
+			),
+			"Source Critter is defeated"
+		)
+	end)
+
+	Harness.test("per-Critter capacity disables fifth card until removal", function()
+		local capacityModel = Harness.clone(model)
+		capacityModel.energy.available = 100
+		local sourceCard = capacityModel.hand[1]
+		local cards = {}
+		for index = 1, 5 do
+			local card = Harness.clone(sourceCard)
+			card.id = `capacity.card.{index}`
+			table.insert(cards, card)
+		end
+		local state = PlanningState.new()
+		for index = 1, 4 do
+			local result = PlanningState.queueCard(state, cards[index], capacityModel)
+			Harness.expect(result.ok)
+			state = result.state
+		end
+		Harness.equal(
+			PlanningState.cardDisabledReason(state, cards[5], capacityModel),
+			"Queue full (4/4)"
+		)
+		Harness.equal(
+			PlanningState.queueCard(state, cards[5], capacityModel).error,
+			"CRITTER_QUEUE_LIMIT_EXCEEDED"
+		)
+		local removed = PlanningState.removeCard(state, cards[2].id)
+		Harness.expect(PlanningState.queueCard(removed.state, cards[5], capacityModel).ok)
 	end)
 
 	Harness.test("commit locks planning and reset restores state", function()

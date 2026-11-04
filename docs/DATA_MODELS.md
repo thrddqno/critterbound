@@ -9,10 +9,10 @@ contracts from earlier runs.
 `CardDefinition` identifies class, ability reference, energy cost, targeting rule, and optional
 ordered effects. Definitions are authored game data and contain no player ownership.
 
-`CritterStats` contains `maxHealth`, `attack`, `defense`, and `speed`, plus optional `skill` and
-`resolve`. Values must be finite and non-negative; `maxHealth` must be positive. `skill` and
-`resolve` break initiative ties and default to zero when absent. Other caps, rounding, and modifier
-formulas are documented in `COMBAT_RULES.md`.
+`CritterStats` contains required non-negative `health`, `speed`, `skill`, and `morale`. Battle stats
+add server-derived `maxHealth = 150 + (4 * health)`. Skill participates in qualifying three- or
+four-card damage combos; Skill and Morale also break initiative ties. Other caps, rounding, and
+modifier formulas are documented in `COMBAT_RULES.md`.
 
 `CardDefinition.targetingRule` supports `SELF`, `ALLY`, `ENEMY`, `ANY`, `FRONT_ENEMY`,
 `ALL_ALLIES`, and `ALL_ENEMIES`. `SELF`, `ENEMY`, `FRONT_ENEMY`, `ALL_ALLIES`, and `ALL_ENEMIES`
@@ -169,10 +169,10 @@ BattleShield = {
 }
 ```
 
-Shields stack in grant order and expire at the end of their grant round. Status and shield arrays are
-runtime battle state, not persisted creature data.
+Shields stack in deterministic preparation order and expire at the end of their preparation round.
+Status and shield arrays are runtime battle state, not persisted creature data.
 
-`BattleState` records phase, round, deterministic RNG state, shared state version, last emitted event
+`BattleState` records phase, round, separate deterministic deck and critical RNG states, shared state version, last emitted event
 sequence, last resolved round, teams, combatants, physical cards, and per-team private zones/plans.
 `eventVersion` and `lastResolvedRound` make event replay and duplicate-resolution checks possible.
 Runtime battle state is not a persisted profile.
@@ -224,7 +224,7 @@ success/failure shape as domain modules. Resolution responses contain:
 
 `BattleSnapshot` contains public combat state plus viewer-owned hand, queue, energy, reserved energy,
 and plan version. It also projects shield totals, effective Speed, latest initiative, and outcome.
-Opponent hand IDs, queued cards during planning, draw order, RNG state, and command receipts are
+Opponent hand IDs, queued cards during planning, draw order, both RNG states, and command receipts are
 omitted.
 
 ## Battle events
@@ -249,13 +249,14 @@ events remain unique across rounds. No event contains a wall-clock timestamp or 
 value. Payload fields are documented with their event kinds in `COMBAT_RULES.md`; payloads are plain
 serializable tables and may grow compatibly within a schema version.
 
-Event kinds emitted by Run 4B:
+Battle event kinds include:
 
 - `INITIATIVE_DETERMINED`
 - `CARD_PLAYED`
 - `TARGET_SELECTED`
 - `DAMAGE_APPLIED`
-- `SHIELD_GRANTED`
+- `SHIELD_PREPARED`
+- `SHIELD_GRANTED` (direct resolver compatibility)
 - `SHIELD_ABSORBED`
 - `HEAL_APPLIED`
 - `STATUS_APPLIED`
@@ -286,7 +287,7 @@ Run 4B validation adds:
 ## Versioning
 
 Authored static and persistent schemas currently use version `1`. Runtime `BattleState` uses
-`schemaVersion = 2`; Run 4B added optional battle fields without changing the meaning of existing
+`schemaVersion = 3`; Combat Run 3 adds the dedicated server-only `criticalRng` stream. Run 4B added optional battle fields without changing the meaning of existing
 ones. Network protocol versioning remains separate because a data migration and protocol change are
 not equivalent. Persisted schema changes require explicit sequential migrations. Unknown future
 versions and corrupt records fail closed rather than being replaced by defaults.

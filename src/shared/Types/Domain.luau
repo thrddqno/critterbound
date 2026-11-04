@@ -14,12 +14,14 @@ export type TargetingRule =
 	| "ALL_ENEMIES"
 
 export type CritterStats = {
-	maxHealth: number,
-	attack: number,
-	defense: number,
+	health: number,
 	speed: number,
-	skill: number?,
-	resolve: number?,
+	skill: number,
+	morale: number,
+}
+
+export type BattleStats = CritterStats & {
+	maxHealth: number,
 }
 
 export type CritterDefinition = {
@@ -42,6 +44,8 @@ export type CardEffect = {
 	statusId: string?,
 	magnitude: number?,
 	duration: number?,
+	triggered: boolean?,
+	criticalEligible: boolean?,
 }
 
 export type CardDefinition = {
@@ -114,14 +118,7 @@ export type CardInstance = {
 
 -- Temporary battle state: never persisted as creature ownership data.
 
-export type BattlePhase =
-	"CREATED"
-	| "ROUND_START"
-	| "PLANNING"
-	| "COMMITTED"
-	| "RESOLVING"
-	| "ROUND_END"
-	| "COMPLETED"
+export type BattlePhase = "PLANNING" | "RESOLVING" | "FINISHED"
 
 export type StatusEffect = {
 	id: string,
@@ -149,7 +146,7 @@ export type BattleCombatant = {
 	slot: number,
 	class: CritterClass,
 	abilityIds: { string },
-	stats: CritterStats,
+	stats: BattleStats,
 	currentHealth: number,
 	statusEffects: { StatusEffect },
 	shields: { BattleShield }?,
@@ -202,6 +199,13 @@ export type TeamRoundState = {
 	drawPileCardInstanceIds: { string }?,
 	handCardInstanceIds: { string },
 	discardCardInstanceIds: { string }?,
+	removedCardInstanceIds: { string }?,
+	lastDrawnRound: number?,
+	lastDrawResult: {
+		requestedCount: number,
+		drawnCount: number,
+		isPartial: boolean,
+	}?,
 	queuedCards: { QueuedCard }?,
 	planVersion: number?,
 	committed: boolean,
@@ -212,6 +216,7 @@ export type BattleState = {
 	id: string,
 	rngSeed: number,
 	rng: RngState?,
+	criticalRng: RngState?,
 	stateVersion: number?,
 	eventVersion: number?,
 	lastResolvedRound: number?,

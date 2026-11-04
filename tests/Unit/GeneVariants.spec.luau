@@ -146,6 +146,7 @@ return function(Harness)
 		stone.abilityGenome = founders.abilityGenome
 		local result = BattleFactory.create(input, {
 			rng = DeterministicRng,
+			criticalRngSeed = 9001,
 			deck = Deck,
 			validator = DomainValidator,
 		})

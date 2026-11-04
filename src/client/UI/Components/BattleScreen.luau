@@ -9,8 +9,26 @@ local EnergyCounter = require(script.Parent.EnergyCounter)
 local BattlePhaseIndicator = require(script.Parent.BattlePhaseIndicator)
 local CommitButton = require(script.Parent.CommitButton)
 local ResetButton = require(script.Parent.ResetButton)
+local CombatLog = require(script.Parent.CombatLog)
+local BattleHudLayout = require(script.Parent.Parent.Parent.Presentation.BattleHudLayout)
+local BattleHandLayout = require(script.Parent.Parent.Parent.Presentation.BattleHandLayout)
 
 local BattleScreen = {}
+
+local function applyRect(instance: GuiObject, value)
+	instance.Position = UDim2.fromOffset(value.x, value.y)
+	instance.Size = UDim2.fromOffset(value.width, value.height)
+end
+
+local function livingViewerCritters(model)
+	local result = {}
+	for _, critter in model.critters do
+		if critter.teamId == model.viewerTeamId and not critter.defeated then
+			table.insert(result, critter)
+		end
+	end
+	return result
+end
 
 export type Props = {
 	model: any,
@@ -23,6 +41,8 @@ export type Props = {
 	onCritterSelected: (string) -> (),
 	onCommit: () -> (),
 	onReset: () -> (),
+	onUndo: () -> (),
+	onSkipPlayback: () -> (),
 	onRestart: () -> (),
 	onExitToMenu: () -> (),
 	selectableTargetIds: { string },
@@ -30,13 +50,14 @@ export type Props = {
 	animationCommandsByCritterId: { [string]: any }?,
 	requestPending: boolean?,
 	message: string?,
+	playbackState: any,
 }
 
 function BattleScreen.mount(parent: Instance, props: Props)
 	local screen = Instance.new("ScreenGui")
 	screen.Name = "CritterboundBattleScreen"
 	screen.ResetOnSpawn = false
-	screen.IgnoreGuiInset = false
+	screen.IgnoreGuiInset = true
 	screen.Parent = parent
 
 	local root = Instance.new("ScrollingFrame")
@@ -44,7 +65,7 @@ function BattleScreen.mount(parent: Instance, props: Props)
 	root.BackgroundColor3 = Theme.Background
 	root.BorderSizePixel = 0
 	root.CanvasSize = UDim2.fromOffset(0, 0)
-	root.ScrollBarThickness = 6
+	root.ScrollBarThickness = 3
 	root.ScrollingDirection = Enum.ScrollingDirection.Y
 	root.Size = UDim2.fromScale(1, 1)
 	root.Parent = screen
@@ -52,22 +73,21 @@ function BattleScreen.mount(parent: Instance, props: Props)
 	local content = Instance.new("Frame")
 	content.Name = "Content"
 	content.BackgroundTransparency = 1
-	content.Position = UDim2.fromOffset(8, 8)
 	content.Parent = root
 
 	local header = Instance.new("Frame")
-	header.Name = "Header"
+	header.Name = "TopHud"
 	header.BackgroundTransparency = 1
 	header.Parent = content
 
 	local phaseHost = Instance.new("Frame")
 	phaseHost.BackgroundTransparency = 1
-	phaseHost.Size = UDim2.fromScale(0.5, 1)
+	phaseHost.Size = UDim2.fromScale(0.62, 1)
 	phaseHost.Parent = header
 	local energyHost = Instance.new("Frame")
 	energyHost.BackgroundTransparency = 1
-	energyHost.Position = UDim2.fromScale(0.5, 0)
-	energyHost.Size = UDim2.fromScale(0.5, 1)
+	energyHost.Position = UDim2.fromScale(0.62, 0)
+	energyHost.Size = UDim2.fromScale(0.38, 1)
 	energyHost.Parent = header
 
 	local initiativeHost = Instance.new("Frame")
@@ -92,13 +112,20 @@ function BattleScreen.mount(parent: Instance, props: Props)
 
 	local controls = Instance.new("Frame")
 	controls.Name = "Controls"
-	controls.BackgroundTransparency = 1
+	controls.BackgroundColor3 = Theme.Panel
+	controls.BackgroundTransparency = 0.08
 	controls.Parent = content
+	local controlsCorner = Instance.new("UICorner")
+	controlsCorner.CornerRadius = UDim.new(0, 7)
+	controlsCorner.Parent = controls
 
-	local phaseHandle = BattlePhaseIndicator.mount(
-		phaseHost,
-		{ phase = props.model.phase, roundNumber = props.model.roundNumber }
-	)
+	local phaseHandle = BattlePhaseIndicator.mount(phaseHost, {
+		phase = props.model.phase,
+		roundNumber = props.model.roundNumber,
+		planningDeadline = props.model.planningDeadline,
+		committed = props.model.committed,
+		bloodMoon = props.model.bloodMoon,
+	})
 	phaseHandle.instance.Size = UDim2.fromScale(1, 1)
 	local energyHandle = EnergyCounter.mount(energyHost, props.energy)
 	energyHandle.instance.Size = UDim2.fromScale(1, 1)
@@ -115,12 +142,22 @@ function BattleScreen.mount(parent: Instance, props: Props)
 	battlefieldHandle.instance.Size = UDim2.fromScale(1, 1)
 	local queueHandle = CardQueue.mount(queueHost, {
 		entries = props.planningState.queuedCards,
-		critters = props.model.critters,
-		locked = props.planningState.committed,
+		critters = livingViewerCritters(props.model),
+		capacity = props.planningState.maxQueuedCardsPerCritter,
+		locked = props.planningState.planningLocked,
 		compact = false,
 		onRemove = props.onRemoveCard,
 	})
 	queueHandle.instance.Size = UDim2.fromScale(1, 1)
+	local combatLogHandle = CombatLog.mount(queueHost, {
+		active = props.playbackState.active,
+		currentActionName = props.playbackState.currentActionName,
+		logEntries = props.playbackState.logEntries,
+		roundTransition = props.playbackState.roundTransition,
+		fastForward = props.playbackState.fastForward,
+		onSkip = props.onSkipPlayback,
+	})
+	combatLogHandle.instance.Size = UDim2.fromScale(1, 1)
 	local handHandle = CardHand.mount(handHost, {
 		cards = props.model.hand,
 		planningState = props.planningState,
@@ -128,13 +165,27 @@ function BattleScreen.mount(parent: Instance, props: Props)
 		onCardSelected = props.onCardSelected,
 		compact = false,
 	})
-	handHandle.instance.Size = UDim2.fromScale(1, 1)
+	handHandle.instance.Position = UDim2.fromOffset(0, BattleHandLayout.HEADER_HEIGHT)
+	handHandle.instance.Size = UDim2.new(1, 0, 1, -BattleHandLayout.HEADER_HEIGHT)
+	local handCountLabel = Instance.new("TextLabel")
+	handCountLabel.Name = "CardZoneCounts"
+	handCountLabel.BackgroundTransparency = 1
+	handCountLabel.Size = UDim2.new(1, -12, 0, BattleHandLayout.HEADER_HEIGHT)
+	handCountLabel.TextColor3 = Theme.MutedText
+	handCountLabel.TextSize = 10
+	handCountLabel.TextXAlignment = Enum.TextXAlignment.Left
+	handCountLabel.Parent = handHost
 	local commitHandle = CommitButton.mount(controls, {
 		committed = props.planningState.committed,
 		disabled = not props.model.canRequestCommit or props.planningState.committed,
 		onActivated = props.onCommit,
 	})
 	local resetHandle = ResetButton.mount(controls, { onActivated = props.onReset })
+	local undoHandle = ResetButton.mount(controls, {
+		onActivated = props.onUndo,
+		label = "Undo Last Action",
+	})
+	undoHandle.instance.Name = "UndoLastActionButton"
 
 	local resultOverlay = Instance.new("Frame")
 	resultOverlay.Name = "BattleResultOverlay"
@@ -148,24 +199,51 @@ function BattleScreen.mount(parent: Instance, props: Props)
 	resultOverlay.Visible = false
 	resultOverlay.Parent = screen
 	local resultText = Instance.new("TextLabel")
+	resultText.Name = "ResultTitle"
 	resultText.BackgroundTransparency = 1
-	resultText.Position = UDim2.fromScale(0.1, 0.15)
-	resultText.Size = UDim2.fromScale(0.8, 0.4)
+	resultText.Position = UDim2.fromScale(0.1, 0.08)
+	resultText.Size = UDim2.fromScale(0.8, 0.22)
 	resultText.TextColor3 = Theme.Text
 	resultText.TextScaled = true
 	resultText.ZIndex = 21
 	resultText.Parent = resultOverlay
+	local summaryText = Instance.new("TextLabel")
+	summaryText.Name = "ResultSummary"
+	summaryText.BackgroundTransparency = 1
+	summaryText.Position = UDim2.fromScale(0.1, 0.33)
+	summaryText.Size = UDim2.fromScale(0.8, 0.3)
+	summaryText.TextColor3 = Theme.MutedText
+	summaryText.TextScaled = true
+	summaryText.TextWrapped = true
+	summaryText.ZIndex = 21
+	summaryText.Parent = resultOverlay
 	local restartButton = Instance.new("TextButton")
+	restartButton.Name = "RestartBattle"
 	restartButton.BackgroundColor3 = Theme.Action
-	restartButton.Position = UDim2.fromScale(0.25, 0.65)
-	restartButton.Size = UDim2.fromScale(0.5, 0.2)
+	restartButton.Position = UDim2.fromScale(0.08, 0.7)
+	restartButton.Size = UDim2.fromScale(0.4, 0.18)
 	restartButton.Text = "Restart Training Grounds"
 	restartButton.TextColor3 = Theme.Text
 	restartButton.TextScaled = true
 	restartButton.ZIndex = 21
 	restartButton.Parent = resultOverlay
-	local restartConnection = restartButton.Activated:Connect(props.onRestart)
 	local currentProps = props
+	local restartConnection = restartButton.Activated:Connect(function()
+		currentProps.onRestart()
+	end)
+	local resultMenuButton = Instance.new("TextButton")
+	resultMenuButton.Name = "ResultMainMenu"
+	resultMenuButton.BackgroundColor3 = Theme.PanelAlt
+	resultMenuButton.Position = UDim2.fromScale(0.52, 0.7)
+	resultMenuButton.Size = UDim2.fromScale(0.4, 0.18)
+	resultMenuButton.Text = "Back to Main Menu"
+	resultMenuButton.TextColor3 = Theme.Text
+	resultMenuButton.TextScaled = true
+	resultMenuButton.ZIndex = 21
+	resultMenuButton.Parent = resultOverlay
+	local resultMenuConnection = resultMenuButton.Activated:Connect(function()
+		currentProps.onExitToMenu()
+	end)
 	local exitButton = Instance.new("TextButton")
 	exitButton.Name = "ExitToMenu"
 	exitButton.BackgroundColor3 = Theme.PanelAlt
@@ -195,9 +273,15 @@ function BattleScreen.mount(parent: Instance, props: Props)
 	local renderChildren: () -> ()
 
 	renderChildren = function()
+		local counts = currentProps.model.cardCounts
+		handCountLabel.Text =
+			`HAND {counts.hand}/{counts.maxHand or 9}  ·  DRAW {counts.draw}  ·  DISCARD {counts.discard}  ·  ACTIVE {counts.total}`
 		phaseHandle.update({
 			phase = currentProps.model.phase,
 			roundNumber = currentProps.model.roundNumber,
+			planningDeadline = currentProps.model.planningDeadline,
+			committed = currentProps.model.committed,
+			bloodMoon = currentProps.model.bloodMoon,
 		})
 		energyHandle.update(currentProps.energy)
 		initiativeHandle.update({ entries = currentProps.model.initiative, compact = compact })
@@ -209,14 +293,27 @@ function BattleScreen.mount(parent: Instance, props: Props)
 			activeCombatantIds = currentProps.activeCombatantIds,
 			animationCommandsByCritterId = currentProps.animationCommandsByCritterId,
 			onCritterSelected = currentProps.onCritterSelected,
+			actingCombatantId = currentProps.playbackState.actingCombatantId,
+			targetedCombatantIds = currentProps.playbackState.targetCombatantIds,
+			feedbackByCombatantId = currentProps.playbackState.feedbackByCombatantId,
 		})
 		queueHandle.update({
 			entries = currentProps.planningState.queuedCards,
-			critters = currentProps.model.critters,
-			locked = currentProps.planningState.committed,
+			critters = livingViewerCritters(currentProps.model),
+			capacity = currentProps.planningState.maxQueuedCardsPerCritter,
+			locked = currentProps.planningState.planningLocked,
 			compact = compact,
 			onRemove = currentProps.onRemoveCard,
 			onReorder = currentProps.onReorderCard,
+		})
+		queueHandle.instance.Visible = not currentProps.playbackState.active
+		combatLogHandle.update({
+			active = currentProps.playbackState.active,
+			currentActionName = currentProps.playbackState.currentActionName,
+			logEntries = currentProps.playbackState.logEntries,
+			roundTransition = currentProps.playbackState.roundTransition,
+			fastForward = currentProps.playbackState.fastForward,
+			onSkip = currentProps.onSkipPlayback,
 		})
 		handHandle.update({
 			cards = currentProps.model.hand,
@@ -231,6 +328,12 @@ function BattleScreen.mount(parent: Instance, props: Props)
 				or not currentProps.model.canRequestCommit
 				or currentProps.planningState.committed,
 			onActivated = currentProps.onCommit,
+			status = if currentProps.model.phase == "RESOLVING"
+				then "Resolving — Locked"
+				elseif currentProps.model.phase == "FINISHED" then "Battle Finished"
+				elseif currentProps.planningState.committed then "Plan Committed — Locked"
+				elseif currentProps.requestPending then "Committing..."
+				else "Ready — Commit Plan",
 		})
 		resetHandle.update({
 			onActivated = if currentProps.model.matchOutcome ~= nil
@@ -238,60 +341,58 @@ function BattleScreen.mount(parent: Instance, props: Props)
 				else currentProps.onReset,
 			label = if currentProps.model.matchOutcome ~= nil
 				then "Restart battle"
-				else "Clear plan",
-			disabled = currentProps.requestPending,
+				else "Clear Queue",
+			disabled = currentProps.requestPending
+				or (currentProps.model.matchOutcome == nil and not currentProps.model.canPlan),
+		})
+		undoHandle.update({
+			onActivated = currentProps.onUndo,
+			label = "Undo Last Action",
+			disabled = currentProps.requestPending
+				or not currentProps.model.canPlan
+				or #currentProps.planningState.queuedCards == 0,
 		})
 		messageLabel.Text = currentProps.message or ""
 		local outcome = currentProps.model.matchOutcome
 		resultOverlay.Visible = outcome ~= nil
 		if outcome ~= nil then
-			resultText.Text = if outcome.isDraw
-				then "DRAW"
-				elseif outcome.winnerTeamId == currentProps.model.viewerTeamId then "VICTORY"
-				else "DEFEAT"
+			local summary = currentProps.model.resultSummary
+			resultText.Text = summary.result
+			summaryText.Text =
+				`Rounds fought: {summary.roundsFought}\nYour team standing: {summary.allyStanding}/{summary.allyTotal}\nOpponents standing: {summary.enemyStanding}/{summary.enemyTotal}`
 		end
 	end
 
 	local function applyLayout()
 		local viewport = root.AbsoluteSize
-		local nextCompact = viewport.X < 1000 or viewport.Y < 650
-		local contentHeight = math.max(viewport.Y - 16, 620)
-		local contentWidth = math.max(viewport.X - 22, 600)
-		local headerHeight = if nextCompact then 44 else 52
-		local initiativeHeight = if nextCompact then 64 else 72
-		local handHeight = if nextCompact then 162 else 190
-		local queueHeight = if #currentProps.planningState.queuedCards == 0
-			then 36
-			elseif nextCompact then 94
-			else 108
-		local gap = 6
-		local initiativeY = headerHeight + gap
-		local battlefieldY = initiativeY + initiativeHeight + gap
-		local handY = contentHeight - handHeight
-		local queueY = handY - gap - queueHeight
-		local battlefieldHeight = math.max(190, queueY - gap - battlefieldY)
-		local controlsWidth =
-			math.min(if nextCompact then 172 else 250, math.floor(contentWidth * 0.3))
-
-		content.Size = UDim2.new(1, -16, 0, contentHeight)
-		root.CanvasSize = UDim2.fromOffset(0, contentHeight + 16)
-		header.Position = UDim2.fromOffset(0, 0)
-		header.Size = UDim2.new(1, 0, 0, headerHeight)
-		initiativeHost.Position = UDim2.fromOffset(0, initiativeY)
-		initiativeHost.Size = UDim2.new(1, 0, 0, initiativeHeight)
-		battlefieldHost.Position = UDim2.fromOffset(0, battlefieldY)
-		battlefieldHost.Size = UDim2.new(1, 0, 0, battlefieldHeight)
-		queueHost.Position = UDim2.fromOffset(0, queueY)
-		queueHost.Size = UDim2.new(1, 0, 0, queueHeight)
-		handHost.Position = UDim2.fromOffset(0, handY)
-		handHost.Size = UDim2.new(1, -controlsWidth - gap, 0, handHeight)
-		controls.Position = UDim2.new(1, -controlsWidth, 0, handY)
-		controls.Size = UDim2.fromOffset(controlsWidth, handHeight)
-		messageLabel.Size = UDim2.new(1, 0, 0, 30)
-		commitHandle.instance.Position = UDim2.fromOffset(0, 34)
-		commitHandle.instance.Size = UDim2.new(1, 0, 0.5, -20)
-		resetHandle.instance.Position = UDim2.new(0, 0, 0.5, 18)
-		resetHandle.instance.Size = UDim2.new(1, 0, 0.5, -18)
+		local layout = BattleHudLayout.compute(viewport.X, viewport.Y)
+		local nextCompact = layout.compact
+		applyRect(content, layout.content)
+		root.CanvasSize = UDim2.fromOffset(0, layout.canvasHeight)
+		applyRect(header, layout.topHud)
+		header.Size = UDim2.fromOffset(layout.topHud.width - 116, layout.topHud.height)
+		applyRect(initiativeHost, layout.orderStrip)
+		applyRect(battlefieldHost, layout.battlefield)
+		applyRect(queueHost, layout.queue)
+		applyRect(handHost, layout.hand)
+		applyRect(controls, layout.controls)
+		local controlsHeight = layout.controls.height
+		local messageHeight = 28
+		local buttonGap = 5
+		local buttonSpace = controlsHeight - messageHeight - buttonGap * 3
+		local commitHeight = math.floor(buttonSpace * 0.48)
+		local secondaryHeight = math.floor((buttonSpace - commitHeight) / 2)
+		messageLabel.Size = UDim2.new(1, 0, 0, messageHeight)
+		commitHandle.instance.Position = UDim2.fromOffset(0, messageHeight + buttonGap)
+		commitHandle.instance.Size = UDim2.new(1, 0, 0, commitHeight)
+		undoHandle.instance.Position =
+			UDim2.fromOffset(0, messageHeight + buttonGap * 2 + commitHeight)
+		undoHandle.instance.Size = UDim2.new(1, 0, 0, secondaryHeight)
+		resetHandle.instance.Position =
+			UDim2.fromOffset(0, messageHeight + buttonGap * 3 + commitHeight + secondaryHeight)
+		resetHandle.instance.Size = UDim2.new(1, 0, 0, secondaryHeight)
+		exitButton.Position = UDim2.new(1, -112, 0, layout.content.y)
+		exitButton.Size = UDim2.fromOffset(100, layout.topHud.height)
 
 		if compact ~= nextCompact then
 			compact = nextCompact
@@ -322,10 +423,13 @@ function BattleScreen.mount(parent: Instance, props: Props)
 			initiativeHandle.destroy()
 			battlefieldHandle.destroy()
 			queueHandle.destroy()
+			combatLogHandle.destroy()
 			handHandle.destroy()
 			commitHandle.destroy()
+			undoHandle.destroy()
 			resetHandle.destroy()
 			restartConnection:Disconnect()
+			resultMenuConnection:Disconnect()
 			exitConnection:Disconnect()
 			resultOverlay:Destroy()
 			screen:Destroy()

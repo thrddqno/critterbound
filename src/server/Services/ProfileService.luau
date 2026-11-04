@@ -17,11 +17,58 @@ local function failure(code: string, message: string)
 	return { ok = false, errors = { { code = code, message = message } } }
 end
 
+local function isIdentifier(value): boolean
+	return type(value) == "string"
+		and #value >= 1
+		and #value <= 96
+		and string.match(value, "^[%w][%w_.:%-]*$") ~= nil
+end
+
 local function new(dependencies)
 	local deps = dependencies
 	local entries = {}
+	local locksByCritterId = {}
+	local locksByToken = {}
+	local lockCounter = 0
 	local service = {}
 	local shuttingDown = false
+	local clock = deps.clock or os.time
+	local ownershipLockSeconds = deps.ownershipLockSeconds or 30
+
+	local function releaseLockRecord(record)
+		locksByToken[record.token] = nil
+		for _, critterId in record.critterIds do
+			if locksByCritterId[critterId] == record then
+				locksByCritterId[critterId] = nil
+			end
+		end
+	end
+
+	local function cleanupExpiredLocks()
+		local now = clock()
+		local expired = {}
+		for _, record in locksByToken do
+			if record.expiresAt <= now then
+				table.insert(expired, record)
+			end
+		end
+		for _, record in expired do
+			releaseLockRecord(record)
+		end
+		return #expired
+	end
+
+	local function releaseUserLocks(userId: number)
+		local owned = {}
+		for _, record in locksByToken do
+			if record.ownerUserId == userId then
+				table.insert(owned, record)
+			end
+		end
+		for _, record in owned do
+			releaseLockRecord(record)
+		end
+	end
 
 	local function loadProfile(userId: number)
 		local entry = entries[userId]
@@ -190,6 +237,7 @@ local function new(dependencies)
 	local function releaseProfile(userId: number)
 		local entry = entries[userId]
 		if entry == nil then
+			releaseUserLocks(userId)
 			return { ok = true, value = true }
 		end
 		local waited = 0
@@ -206,6 +254,7 @@ local function new(dependencies)
 		end
 		if entry.state ~= "READY" then
 			entries[userId] = nil
+			releaseUserLocks(userId)
 			return entry.failure or { ok = true, value = true }
 		end
 		entry.saving = true
@@ -213,7 +262,76 @@ local function new(dependencies)
 		entry.saving = false
 		entry.state = "RELEASED"
 		entries[userId] = nil
+		releaseUserLocks(userId)
 		return released
+	end
+
+	local function acquireOwnershipLocks(userId: number, critterIds, operationType)
+		if operationType ~= "BREEDING" and operationType ~= "TRANSFER" then
+			return failure("INVALID_LOCK_OPERATION", "Ownership lock operation is invalid")
+		end
+		if type(critterIds) ~= "table" or #critterIds < 1 or #critterIds > 16 then
+			return failure("INVALID_CRITTER_IDS", "Ownership lock requires Critter IDs")
+		end
+		local entry, problem = readyEntry(userId)
+		if entry == nil then
+			return problem
+		end
+		cleanupExpiredLocks()
+		local seen = {}
+		for _, critterId in critterIds do
+			if not isIdentifier(critterId) or seen[critterId] then
+				return failure("INVALID_CRITTER_IDS", "Ownership lock Critter IDs are malformed")
+			end
+			seen[critterId] = true
+			local critter = entry.handle.profile.ownedCritters[critterId]
+			if critter == nil or critter.ownerUserId ~= userId then
+				return failure("CRITTER_NOT_OWNED", "Critter is not owned by this player")
+			end
+			if locksByCritterId[critterId] ~= nil then
+				return failure("OWNERSHIP_LOCK_CONFLICT", "Critter is already locked")
+			end
+		end
+
+		lockCounter += 1
+		local token = `ownership-lock:{userId}:{lockCounter}`
+		local record = {
+			token = token,
+			ownerUserId = userId,
+			operationType = operationType,
+			critterIds = clone(critterIds),
+			expiresAt = clock() + ownershipLockSeconds,
+		}
+		locksByToken[token] = record
+		for _, critterId in critterIds do
+			locksByCritterId[critterId] = record
+		end
+		return { ok = true, value = clone(record) }
+	end
+
+	local function getOwnershipLock(critterId)
+		if not isIdentifier(critterId) then
+			return nil
+		end
+		cleanupExpiredLocks()
+		local record = locksByCritterId[critterId]
+		return if record == nil then nil else clone(record)
+	end
+
+	local function releaseOwnershipLocks(userId: number, token)
+		if not isIdentifier(token) then
+			return failure("INVALID_LOCK_TOKEN", "Ownership lock token is malformed")
+		end
+		cleanupExpiredLocks()
+		local record = locksByToken[token]
+		if record == nil then
+			return { ok = true, value = false }
+		end
+		if record.ownerUserId ~= userId then
+			return failure("LOCK_NOT_OWNED", "Ownership lock belongs to another player")
+		end
+		releaseLockRecord(record)
+		return { ok = true, value = true }
 	end
 
 	function service.beginShutdown()
@@ -238,6 +356,10 @@ local function new(dependencies)
 	service.SaveProfile = saveProfile
 	service.UpdateProfile = updateProfile
 	service.ReleaseProfile = releaseProfile
+	service.AcquireOwnershipLocks = acquireOwnershipLocks
+	service.GetOwnershipLock = getOwnershipLock
+	service.ReleaseOwnershipLocks = releaseOwnershipLocks
+	service.CleanupExpiredOwnershipLocks = cleanupExpiredLocks
 	return table.freeze(service)
 end
 

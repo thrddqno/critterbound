@@ -13,7 +13,10 @@ return function(Harness)
 
 	local function setup()
 		local input = Fixtures.createInput()
-		local state = Factory.create(input, { rng = Rng, deck = Deck, validator = Validator }).value
+		local state = Factory.create(
+			input,
+			{ rng = Rng, criticalRngSeed = 9001, deck = Deck, validator = Validator }
+		).value
 		local instances = {}
 		for _, team in input.teams do
 			for _, instance in team.critterInstances do
@@ -43,6 +46,8 @@ return function(Harness)
 		local result = Projector.project(state, 101, context)
 		Harness.expect(result.ok)
 		Harness.expect(result.value.rng == nil)
+		Harness.expect(result.value.criticalRng == nil)
+		Harness.expect(result.value.battleState.criticalRng == nil)
 		Harness.expect(result.value.processedCommandsById == nil)
 		for _, projected in result.value.battleState.teamRoundStates do
 			if projected.teamId == "team.1" then
@@ -100,7 +105,7 @@ return function(Harness)
 		local first = BattlePlan.commitPlan(state, "team.1", input.cardDefinitionsById)
 		Harness.equal(#Projector.project(first.value, 202, context).value.visibleQueuedCards, 0)
 		local second = BattlePlan.commitPlan(first.value, "team.2", input.cardDefinitionsById)
-		Harness.equal(second.value.phase, "COMMITTED")
+		Harness.equal(second.value.phase, "RESOLVING")
 		Harness.expect(Projector.project(second.value, 101, context).ok)
 	end)
 

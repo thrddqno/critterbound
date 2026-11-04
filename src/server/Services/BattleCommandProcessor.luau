@@ -53,6 +53,13 @@ local function validatePayload(commandType: string, payload)
 	if type(payload) ~= "table" then
 		return failure("INVALID_PAYLOAD", "Command payload must be a table")
 	end
+	if
+		payload.isCritical ~= nil
+		or payload.criticalOutcome ~= nil
+		or payload.criticalMultiplier ~= nil
+	then
+		return failure("INVALID_PAYLOAD", "Critical outcomes are server-authoritative")
+	end
 	if commandType == "QUEUE_CARD" then
 		if not isNonEmptyString(payload.cardInstanceId) then
 			return failure("INVALID_PAYLOAD", "Card instance ID is required")

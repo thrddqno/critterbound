@@ -11,6 +11,8 @@ end
 local CombatConstants = requireSibling("CombatConstants")
 local DeepClone = requireSibling("DeepClone")
 local Deck = requireSibling("Deck")
+local DeckRules = requireSibling("DeckRules")
+local DeckShuffler = requireSibling("DeckShuffler")
 local DeterministicRng = requireSibling("DeterministicRng")
 local RoundEconomy = requireSibling("RoundEconomy")
 
@@ -19,7 +21,7 @@ local RoundEconomy = requireSibling("RoundEconomy")
 -- team draws three cards in team-index order. The RNG stream continues from state.rng.
 --
 -- Callers must guard against resolving the same round twice. RoundResolver does this with
--- state.lastResolvedRound and the COMMITTED phase check.
+-- state.lastResolvedRound and the RESOLVING phase check.
 
 local function orderedTeamStates(state)
 	local teamsById = {}
@@ -45,8 +47,12 @@ local function apply(state, resolvedCardsByTeamId, dependencies)
 	local deps = dependencies or {}
 	local deck = deps.deck or Deck
 	local economy = deps.economy or RoundEconomy
-	local shuffle = deps.shuffle or DeterministicRng.shuffle
+	local shuffle = deps.shuffle
+		or function(rng, values)
+			return DeckShuffler.shuffle(rng, values, DeterministicRng)
+		end
 	local drawPerRound = deps.drawPerRound or CombatConstants.DrawPerRound
+	local maxHandSize = deps.maxHandSize or DeckRules.Default.MaxHandSize
 	local resolvedByTeam = resolvedCardsByTeamId or {}
 	local retired = deps.retiredCardInstanceIds or {}
 
@@ -67,10 +73,12 @@ local function apply(state, resolvedCardsByTeamId, dependencies)
 			drawPileCardInstanceIds = teamState.drawPileCardInstanceIds or {},
 			handCardInstanceIds = teamState.handCardInstanceIds or {},
 			discardCardInstanceIds = teamState.discardCardInstanceIds or {},
+			removedCardInstanceIds = teamState.removedCardInstanceIds or {},
 		}, retired)
 		teamState.drawPileCardInstanceIds = zones.drawPileCardInstanceIds
 		teamState.handCardInstanceIds = zones.handCardInstanceIds
 		teamState.discardCardInstanceIds = zones.discardCardInstanceIds
+		teamState.removedCardInstanceIds = zones.removedCardInstanceIds
 
 		local resolved = resolvedByTeam[teamState.teamId] or {}
 		local resolvedSet = {}
@@ -110,13 +118,21 @@ local function apply(state, resolvedCardsByTeamId, dependencies)
 			drawPileCardInstanceIds = teamState.drawPileCardInstanceIds or {},
 			handCardInstanceIds = teamState.handCardInstanceIds or {},
 			discardCardInstanceIds = teamState.discardCardInstanceIds or {},
-		}, drawPerRound, rng, shuffle)
+			removedCardInstanceIds = teamState.removedCardInstanceIds or {},
+		}, drawPerRound, rng, shuffle, { maxHandSize = maxHandSize })
 		if not drawResult.ok then
 			return drawResult
 		end
 		teamState.drawPileCardInstanceIds = drawResult.value.zones.drawPileCardInstanceIds
 		teamState.handCardInstanceIds = drawResult.value.zones.handCardInstanceIds
 		teamState.discardCardInstanceIds = drawResult.value.zones.discardCardInstanceIds
+		teamState.removedCardInstanceIds = drawResult.value.zones.removedCardInstanceIds
+		teamState.lastDrawnRound = (nextState.roundNumber or 1) + 1
+		teamState.lastDrawResult = {
+			requestedCount = drawResult.value.requestedCount,
+			drawnCount = drawResult.value.drawnCount,
+			isPartial = drawResult.value.isPartial,
+		}
 		rng = drawResult.value.rng
 	end
 

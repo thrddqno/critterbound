@@ -179,7 +179,13 @@ local function new(dependencies)
 		if activeMutation[userId] then
 			return failure("COMMAND_IN_PROGRESS", "Another breeding command is running")
 		end
-		activeMutation[userId] = true
+		local lockResult =
+			deps.profileService.AcquireOwnershipLocks(userId, { parentAId, parentBId }, "BREEDING")
+		if not lockResult.ok then
+			return lockResult
+		end
+		local lockToken = lockResult.value.token
+		activeMutation[userId] = lockToken
 		local ok, result = pcall(function()
 			local rngResult = deps.rng.new(deps.rngSeed())
 			if not rngResult.ok then
@@ -295,6 +301,7 @@ local function new(dependencies)
 			})
 		end)
 		activeMutation[userId] = nil
+		deps.profileService.ReleaseOwnershipLocks(userId, lockToken)
 		if not ok then
 			return failure("INTERNAL_ERROR", "Breeding mutation failed")
 		end
@@ -331,7 +338,11 @@ local function new(dependencies)
 	end
 
 	function service.removePlayer(userId)
+		local lockToken = activeMutation[userId]
 		activeMutation[userId] = nil
+		if lockToken ~= nil then
+			deps.profileService.ReleaseOwnershipLocks(userId, lockToken)
+		end
 	end
 
 	service.handleRequest = handleRequest

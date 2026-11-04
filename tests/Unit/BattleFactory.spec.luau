@@ -7,7 +7,7 @@ return function(Harness)
 	local Validator = require("../../src/shared/Validation/DomainValidator")
 	local Fixtures = require("../Fixtures/Run4Fixtures")
 
-	local dependencies = { rng = Rng, deck = Deck, validator = Validator }
+	local dependencies = { rng = Rng, criticalRngSeed = 9001, deck = Deck, validator = Validator }
 
 	Harness.test("valid 3v3 battle initializes deterministically", function()
 		local input = Fixtures.createInput()
@@ -22,6 +22,10 @@ return function(Harness)
 		Harness.equal(first.value.stateVersion, 1)
 		Harness.equal(#first.value.combatants, 6)
 		Harness.equal(#first.value.cardInstances, 48)
+		for _, combatant in first.value.combatants do
+			Harness.equal(combatant.currentHealth, combatant.stats.maxHealth)
+			Harness.equal(combatant.stats.maxHealth, 150 + 4 * combatant.stats.health)
+		end
 	end)
 
 	Harness.test("battle factory creates deck hand and energy per team", function()
@@ -32,18 +36,79 @@ return function(Harness)
 			Harness.equal(#teamState.handCardInstanceIds, 6)
 			Harness.equal(#teamState.drawPileCardInstanceIds, 18)
 			Harness.equal(#teamState.discardCardInstanceIds, 0)
+			Harness.equal(#teamState.removedCardInstanceIds, 0)
 			Harness.equal(#teamState.queuedCards, 0)
 		end
 	end)
 
-	Harness.test("battle factory gives every Critter eight physical cards", function()
+	Harness.test("opening hand is shared and may be uneven across Critters", function()
+		local state = Factory.create(Fixtures.createInput(), dependencies).value
+		local cards = Fixtures.indexById(state.cardInstances)
+		local foundUneven = false
+		for _, teamState in state.teamRoundStates do
+			local byCritter = {}
+			for _, cardId in teamState.handCardInstanceIds do
+				local sourceId = cards[cardId].sourceCritterInstanceId
+				byCritter[sourceId] = (byCritter[sourceId] or 0) + 1
+			end
+			for _, count in byCritter do
+				if count ~= 2 then
+					foundUneven = true
+				end
+			end
+		end
+		Harness.expect(foundUneven, "Fixed seed should demonstrate no per-Critter guarantee")
+	end)
+
+	Harness.test("every team card instance occupies exactly one opening zone", function()
+		local state = Factory.create(Fixtures.createInput(), dependencies).value
+		local cards = Fixtures.indexById(state.cardInstances)
+		for _, teamState in state.teamRoundStates do
+			local seen = {}
+			for _, zone in
+				{
+					teamState.drawPileCardInstanceIds,
+					teamState.handCardInstanceIds,
+					teamState.discardCardInstanceIds,
+					teamState.removedCardInstanceIds,
+				}
+			do
+				for _, cardId in zone do
+					Harness.expect(not seen[cardId])
+					Harness.expect(cards[cardId] ~= nil)
+					seen[cardId] = true
+				end
+			end
+			Harness.equal(
+				24,
+				(function()
+					local count = 0
+					for _ in seen do
+						count += 1
+					end
+					return count
+				end)()
+			)
+		end
+	end)
+
+	Harness.test("battle factory gives every Critter two copies per equipped ability", function()
 		local state = Factory.create(Fixtures.createInput(), dependencies).value
 		local counts = {}
+		local definitionsBySource = {}
 		for _, card in state.cardInstances do
 			counts[card.sourceCritterInstanceId] = (counts[card.sourceCritterInstanceId] or 0) + 1
+			local definitions = definitionsBySource[card.sourceCritterInstanceId] or {}
+			definitions[card.definitionId] = (definitions[card.definitionId] or 0) + 1
+			definitionsBySource[card.sourceCritterInstanceId] = definitions
 		end
 		for _, count in counts do
 			Harness.equal(count, 8)
+		end
+		for _, definitions in definitionsBySource do
+			for _, count in definitions do
+				Harness.equal(count, 2)
+			end
 		end
 		Harness.equal(#state.cardInstances, 48)
 	end)
@@ -89,5 +154,26 @@ return function(Harness)
 			secondIds[card.id] = true
 		end
 		Harness.deepEqual(firstIds, secondIds)
+	end)
+
+	Harness.test("critical RNG seed never changes opening deck order", function()
+		local firstDependencies = table.clone(dependencies)
+		local secondDependencies = table.clone(dependencies)
+		firstDependencies.criticalRngSeed = 123
+		secondDependencies.criticalRngSeed = 456
+		local first = Factory.create(Fixtures.createInput(), firstDependencies).value
+		local second = Factory.create(Fixtures.createInput(), secondDependencies).value
+		for index, teamState in first.teamRoundStates do
+			Harness.deepEqual(
+				teamState.handCardInstanceIds,
+				second.teamRoundStates[index].handCardInstanceIds
+			)
+			Harness.deepEqual(
+				teamState.drawPileCardInstanceIds,
+				second.teamRoundStates[index].drawPileCardInstanceIds
+			)
+		end
+		Harness.expect(first.criticalRng.state ~= second.criticalRng.state)
+		Harness.deepEqual(first.rng, second.rng)
 	end)
 end

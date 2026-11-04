@@ -15,13 +15,16 @@ function ResetButton.mount(parent: Instance, props: Props)
 	button.Parent = parent
 	local current = props
 	local connection = button.Activated:Connect(function()
-		current.onActivated()
+		if not current.disabled then
+			current.onActivated()
+		end
 	end)
 	local function update(nextProps: Props)
 		current = nextProps
 		button.Text = nextProps.label or "Clear plan"
 		button.Active = not nextProps.disabled
 		button.AutoButtonColor = not nextProps.disabled
+		button.BackgroundColor3 = if nextProps.disabled then Theme.Disabled else Theme.PanelAlt
 	end
 	update(props)
 	return table.freeze({

@@ -8,6 +8,7 @@ local function requireCritterCatalog()
 end
 
 local CritterCatalog = requireCritterCatalog()
+local CONTENT_VERSION = 1
 local APPEARANCE_SLOTS = { "body", "eyes", "wings", "tail", "color", "markings", "accessories" }
 local ABILITY_SLOTS = { "mouth", "horn", "back", "tail", "traits" }
 local POSITIONS = { "D", "R1", "R2" }
@@ -60,6 +61,7 @@ local fallbackByClassAndSlot = {}
 
 local function add(definition)
 	assert(definitions[definition.id] == nil, `Duplicate gene {definition.id}`)
+	definition.contentVersion = CONTENT_VERSION
 	definitions[definition.id] = definition
 	if definition.fallbackPriority ~= nil then
 		for _, className in definition.classes or CLASSES do
@@ -706,10 +708,17 @@ local function appearanceExpressible(
 end
 
 return table.freeze({
+	ContentVersion = CONTENT_VERSION,
 	AppearanceSlots = table.freeze(APPEARANCE_SLOTS),
 	AbilitySlots = table.freeze(ABILITY_SLOTS),
 	Positions = table.freeze(POSITIONS),
 	get = function(id: string)
+		return if definitions[id] == nil then nil else clone(definitions[id])
+	end,
+	getAtVersion = function(contentVersion: number, id: string)
+		if contentVersion ~= CONTENT_VERSION then
+			return nil
+		end
 		return if definitions[id] == nil then nil else clone(definitions[id])
 	end,
 	allById = function()

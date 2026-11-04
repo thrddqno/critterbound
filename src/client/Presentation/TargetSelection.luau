@@ -48,6 +48,26 @@ local function needsSelection(card): boolean
 	return card.targetingRule == "ALLY" or card.targetingRule == "ANY"
 end
 
+local function ruleDescription(card): string
+	if card.targetingRule == "ENEMY" then
+		return "Target: automatic enemy"
+	elseif card.targetingRule == "FRONT_ENEMY" then
+		return "Target: automatic front enemy"
+	elseif card.targetingRule == "ALLY" then
+		return "Target: choose a highlighted ally"
+	elseif card.targetingRule == "ANY" then
+		return "Target: choose a highlighted Critter"
+	elseif card.targetingRule == "SELF" then
+		return "Target: self (automatic)"
+	elseif card.targetingRule == "ALL_ALLIES" then
+		return "Target: all allies (automatic)"
+	elseif card.targetingRule == "ALL_ENEMIES" then
+		return "Target: all enemies (automatic)"
+	end
+	return `Target: {card.targetingRule}`
+end
+
 TargetSelection.legalTargetIds = legalTargetIds
 TargetSelection.needsSelection = needsSelection
+TargetSelection.ruleDescription = ruleDescription
 return table.freeze(TargetSelection)

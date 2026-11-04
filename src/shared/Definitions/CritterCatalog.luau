@@ -13,17 +13,15 @@ end
 
 local definitionsByClass = {
 	Stone = {
-		schemaVersion = 1,
+		schemaVersion = 2,
 		id = "critter.training.stone",
 		displayName = "Bastion",
 		class = "Stone",
 		baseStats = {
-			maxHealth = 120,
-			attack = 22,
-			defense = 34,
+			health = 52,
 			speed = 10,
 			skill = 2,
-			resolve = 6,
+			morale = 6,
 		},
 		abilityIds = { "stone.guard", "stone.bulwark", "stone.quake", "stone.slam" },
 		abilityPool = {
@@ -37,17 +35,15 @@ local definitionsByClass = {
 		},
 	},
 	Feral = {
-		schemaVersion = 1,
+		schemaVersion = 2,
 		id = "critter.training.feral",
 		displayName = "Ravager",
 		class = "Feral",
 		baseStats = {
-			maxHealth = 84,
-			attack = 40,
-			defense = 12,
+			health = 31,
 			speed = 31,
 			skill = 5,
-			resolve = 2,
+			morale = 2,
 		},
 		abilityIds = { "feral.strike", "feral.pounce", "feral.frenzy", "feral.rend" },
 		abilityPool = {
@@ -61,17 +57,15 @@ local definitionsByClass = {
 		},
 	},
 	Verdant = {
-		schemaVersion = 1,
+		schemaVersion = 2,
 		id = "critter.training.verdant",
 		displayName = "Bloom",
 		class = "Verdant",
 		baseStats = {
-			maxHealth = 98,
-			attack = 18,
-			defense = 20,
+			health = 43,
 			speed = 20,
 			skill = 4,
-			resolve = 5,
+			morale = 5,
 		},
 		abilityIds = { "verdant.mend", "verdant.renew", "verdant.grove", "verdant.seed" },
 		abilityPool = {
@@ -84,17 +78,15 @@ local definitionsByClass = {
 		},
 	},
 	Tide = {
-		schemaVersion = 1,
+		schemaVersion = 2,
 		id = "critter.training.tide",
 		displayName = "Rill",
 		class = "Tide",
 		baseStats = {
-			maxHealth = 102,
-			attack = 20,
-			defense = 22,
+			health = 39,
 			speed = 17,
 			skill = 5,
-			resolve = 5,
+			morale = 5,
 		},
 		abilityIds = { "tide.mend", "tide.renew", "tide.barrier", "tide.surge" },
 		abilityPool = {
@@ -108,17 +100,15 @@ local definitionsByClass = {
 		},
 	},
 	Gale = {
-		schemaVersion = 1,
+		schemaVersion = 2,
 		id = "critter.training.gale",
 		displayName = "Zephyr",
 		class = "Gale",
 		baseStats = {
-			maxHealth = 88,
-			attack = 27,
-			defense = 15,
+			health = 27,
 			speed = 28,
 			skill = 6,
-			resolve = 3,
+			morale = 3,
 		},
 		abilityIds = { "gale.ward", "gale.shelter", "gale.gust", "gale.haste" },
 		abilityPool = {
@@ -131,17 +121,15 @@ local definitionsByClass = {
 		},
 	},
 	Shade = {
-		schemaVersion = 1,
+		schemaVersion = 2,
 		id = "critter.training.shade",
 		displayName = "Gloom",
 		class = "Shade",
 		baseStats = {
-			maxHealth = 82,
-			attack = 34,
-			defense = 14,
+			health = 29,
 			speed = 24,
 			skill = 6,
-			resolve = 4,
+			morale = 4,
 		},
 		abilityIds = { "shade.bite", "shade.toxin", "shade.weaken", "shade.storm" },
 		abilityPool = {

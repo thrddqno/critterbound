@@ -38,22 +38,30 @@ local function compatible(
 	speciesId: string?,
 	slot: string,
 	seenAbilities
-): boolean
-	if
-		definition.kind ~= "ABILITY"
-		or definition.slot ~= slot
-		or not GeneRegistry.classExpressible(definition, className)
-		or not GeneRegistry.speciesExpressible(definition, className, speciesId)
-	then
-		return false
+): (boolean, string?)
+	if definition.kind ~= "ABILITY" or definition.slot ~= slot then
+		return false, "INCOMPATIBLE_GENE_LOCUS"
+	end
+	if not GeneRegistry.classExpressible(definition, className) then
+		return false, "CLASS_INCOMPATIBLE"
+	end
+	if not GeneRegistry.speciesExpressible(definition, className, speciesId) then
+		return false, "SPECIES_INCOMPATIBLE"
 	end
 	if definition.abilityId == nil then
-		return slot == "traits"
+		return slot == "traits", if slot == "traits" then nil else "MISSING_ABILITY"
 	end
 	local card = CardCatalog.getByAbilityId(definition.abilityId)
-	return card ~= nil
-		and cardAllowedForGene(definition, card, className)
-		and not seenAbilities[definition.abilityId]
+	if card == nil then
+		return false, "MISSING_CARD_DEFINITION"
+	end
+	if not cardAllowedForGene(definition, card, className) then
+		return false, "CARD_CLASS_INCOMPATIBLE"
+	end
+	if seenAbilities[definition.abilityId] then
+		return false, "DUPLICATE_ABILITY"
+	end
+	return true, nil
 end
 
 local function resolveSlot(
@@ -61,29 +69,39 @@ local function resolveSlot(
 	className: string,
 	speciesId: string?,
 	slot: string,
-	seenAbilities
+	seenAbilities,
+	dominantOnly: boolean?
 )
 	local triplet = genome.slots[slot]
+	local dominantReason = "MISSING_DOMINANT_GENE"
 	if type(triplet) == "table" then
-		for _, position in GeneRegistry.Positions do
+		local positions = if dominantOnly then { "D" } else GeneRegistry.Positions
+		for _, position in positions do
 			local definition = GeneRegistry.get(triplet[position])
-			if
-				definition ~= nil
-				and compatible(definition, className, speciesId, slot, seenAbilities)
-			then
-				return definition, position, false
+			local isCompatible = false
+			local reason = "UNKNOWN_GENE"
+			if definition ~= nil then
+				isCompatible, reason =
+					compatible(definition, className, speciesId, slot, seenAbilities)
+			end
+			if position == "D" then
+				dominantReason = reason
+			end
+			if definition ~= nil and isCompatible then
+				return definition, position, false, nil
 			end
 		end
 	end
 	for _, definition in GeneRegistry.fallbacks("ABILITY", className, slot) do
-		if compatible(definition, className, speciesId, slot, seenAbilities) then
-			return definition, "FALLBACK", true
+		local isCompatible = compatible(definition, className, speciesId, slot, seenAbilities)
+		if isCompatible then
+			return definition, "FALLBACK", true, dominantReason
 		end
 	end
-	return nil, nil, nil
+	return nil, nil, nil, dominantReason
 end
 
-local function resolve(genome, className: string, speciesId: string?)
+local function resolveInternal(genome, className: string, speciesId: string?, dominantOnly: boolean)
 	if type(genome) ~= "table" or genome.schemaVersion ~= 2 or type(genome.slots) ~= "table" then
 		return failure("INVALID_ABILITY_GENOME", "Ability genome schema 2 is required")
 	end
@@ -93,10 +111,11 @@ local function resolve(genome, className: string, speciesId: string?)
 	local resolvedGenesBySlot = {}
 	local sourcesBySlot = {}
 	local fallbackSlots = {}
+	local fallbackReasonsBySlot = {}
 	local seenAbilities = {}
 	for _, slot in GeneRegistry.AbilitySlots do
-		local definition, position, usedFallback =
-			resolveSlot(genome, className, speciesId, slot, seenAbilities)
+		local definition, position, usedFallback, fallbackReason =
+			resolveSlot(genome, className, speciesId, slot, seenAbilities, dominantOnly)
 		if definition == nil then
 			return failure(
 				"UNRESOLVED_ABILITY_GENE",
@@ -108,6 +127,7 @@ local function resolve(genome, className: string, speciesId: string?)
 		sourcesBySlot[slot] = position
 		if usedFallback then
 			table.insert(fallbackSlots, slot)
+			fallbackReasonsBySlot[slot] = fallbackReason
 		end
 		if definition.abilityId ~= nil then
 			local card = CardCatalog.getByAbilityId(definition.abilityId)
@@ -139,8 +159,17 @@ local function resolve(genome, className: string, speciesId: string?)
 			resolvedGenesBySlot = resolvedGenesBySlot,
 			sourcesBySlot = sourcesBySlot,
 			fallbackSlots = fallbackSlots,
+			fallbackReasonsBySlot = fallbackReasonsBySlot,
 		},
 	}
+end
+
+local function resolve(genome, className: string, speciesId: string?)
+	return resolveInternal(genome, className, speciesId, false)
+end
+
+local function resolveDominant(genome, className: string, speciesId: string?)
+	return resolveInternal(genome, className, speciesId, true)
 end
 
 local abilityGenesByAbilityId = {}
@@ -170,5 +199,6 @@ local function cardClassFor(abilityId: string, className: string): string?
 end
 
 AbilityResolver.resolve = resolve
+AbilityResolver.resolveDominant = resolveDominant
 AbilityResolver.cardClassFor = cardClassFor
 return table.freeze(AbilityResolver)

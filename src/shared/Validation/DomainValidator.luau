@@ -30,6 +30,15 @@ end
 
 local TargetingRules = requireDefinition("TargetingRules")
 
+local function requireBattle(name: string)
+	if script ~= nil then
+		return require((script.Parent.Parent.Battle :: any)[name])
+	end
+	return require(`../Battle/{name}`)
+end
+
+local PlanningRules = requireBattle("PlanningRules")
+
 local function requireGenetics(name: string)
 	if script ~= nil then
 		return require((script.Parent.Parent.Genetics :: any)[name])
@@ -77,8 +86,8 @@ local VALID_EFFECT_KINDS: { [string]: boolean } = {
 
 local VALID_STATUS_IDS: { [string]: boolean } = {
 	POISON = true,
-	ATTACK_UP = true,
-	ATTACK_DOWN = true,
+	DAMAGE_UP = true,
+	DAMAGE_DOWN = true,
 	SPEED_UP = true,
 	SPEED_DOWN = true,
 }
@@ -189,32 +198,22 @@ local function validateStats(errors: { DomainError }, value: unknown, path: stri
 
 	local stats = value :: { [any]: any }
 
-	for _, field in { "maxHealth", "attack", "defense", "speed" } do
+	for _, field in { "health", "speed", "skill", "morale" } do
 		local fieldValue = stats[field]
 		if not isFiniteNumber(fieldValue) or fieldValue < 0 then
 			addError(errors, "INVALID_STAT", "Expected finite non-negative stat", `{path}.{field}`)
 		end
 	end
 
-	for _, field in { "skill", "resolve" } do
-		local fieldValue = stats[field]
-		if fieldValue ~= nil and (not isFiniteNumber(fieldValue) or fieldValue < 0) then
+	for _, retiredField in { "maxHealth", "attack", "defense", "resolve" } do
+		if stats[retiredField] ~= nil then
 			addError(
 				errors,
-				"INVALID_STAT",
-				"Expected finite non-negative optional stat",
-				`{path}.{field}`
+				"RETIRED_STAT",
+				"Retired combat stat is not allowed",
+				`{path}.{retiredField}`
 			)
 		end
-	end
-
-	if isFiniteNumber(stats.maxHealth) and stats.maxHealth <= 0 then
-		addError(
-			errors,
-			"INVALID_MAX_HEALTH",
-			"maxHealth must be greater than zero",
-			`{path}.maxHealth`
-		)
 	end
 end
 
@@ -358,11 +357,11 @@ local function validateCritterDefinition(value: unknown): ValidationResult
 	end
 
 	local definition = value :: { [any]: any }
-	if definition.schemaVersion ~= 1 then
+	if definition.schemaVersion ~= 2 then
 		addError(
 			errors,
 			"UNSUPPORTED_SCHEMA",
-			"CritterDefinition schemaVersion must be 1",
+			"CritterDefinition schemaVersion must be 2",
 			"schemaVersion"
 		)
 	end
@@ -402,11 +401,11 @@ local function validateCritterInstance(
 	end
 
 	local instance = value :: { [any]: any }
-	if instance.schemaVersion ~= 2 then
+	if instance.schemaVersion ~= 3 then
 		addError(
 			errors,
 			"UNSUPPORTED_SCHEMA",
-			"CritterInstance schemaVersion must be 2",
+			"CritterInstance schemaVersion must be 3",
 			"schemaVersion"
 		)
 	end
@@ -561,6 +560,38 @@ local function validateCardEffects(errors: { DomainError }, value: unknown, path
 					"INVALID_EFFECT_AMOUNT",
 					"Effect amount must be finite and non-negative",
 					`{effectPath}.amount`
+				)
+			end
+			if
+				kind == "DAMAGE"
+				and effect.triggered ~= nil
+				and type(effect.triggered) ~= "boolean"
+			then
+				addError(
+					errors,
+					"INVALID_TRIGGERED_DAMAGE_FLAG",
+					"triggered must be boolean when present",
+					`{effectPath}.triggered`
+				)
+			end
+			if
+				kind == "DAMAGE"
+				and effect.criticalEligible ~= nil
+				and type(effect.criticalEligible) ~= "boolean"
+			then
+				addError(
+					errors,
+					"INVALID_CRITICAL_ELIGIBILITY",
+					"criticalEligible must be boolean when present",
+					`{effectPath}.criticalEligible`
+				)
+			end
+			if kind ~= "DAMAGE" and (effect.triggered ~= nil or effect.criticalEligible ~= nil) then
+				addError(
+					errors,
+					"INVALID_CRITICAL_ELIGIBILITY",
+					"Critical eligibility fields are valid only for damage effects",
+					effectPath
 				)
 			end
 		elseif kind == "STATUS" then
@@ -837,11 +868,12 @@ local function validateBattleCommand(
 	end
 
 	local queueLength = getArrayLength(command.queuedCards)
-	if queueLength == nil or queueLength > 24 then
+	local maximumQueueLength = #context.team.combatantIds * PlanningRules.MaxQueuedCardsPerCritter
+	if queueLength == nil or queueLength > maximumQueueLength then
 		addError(
 			errors,
 			"INVALID_QUEUE_LENGTH",
-			"Queued cards must be a dense array with at most 24 entries",
+			`Queued cards must be a dense array with at most {maximumQueueLength} entries`,
 			"queuedCards"
 		)
 		return finish(errors)
@@ -990,6 +1022,14 @@ local function validateBattleCommand(
 	end
 
 	for sourceId, indices in queueIndicesBySource do
+		if #indices > PlanningRules.MaxQueuedCardsPerCritter then
+			addError(
+				errors,
+				"CRITTER_QUEUE_LIMIT_EXCEEDED",
+				`Critter cannot queue more than {PlanningRules.MaxQueuedCardsPerCritter} cards`,
+				`queuedCards.{sourceId}`
+			)
+		end
 		table.sort(indices)
 		for expected, actual in indices do
 			if actual ~= expected then

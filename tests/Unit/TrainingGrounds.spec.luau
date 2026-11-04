@@ -10,11 +10,13 @@ return function(Harness)
 		local deps = Fixtures.dependencies()
 		local first = Factory.create(input, {
 			rng = deps.rng,
+			criticalRngSeed = 9001,
 			deck = deps.deck,
 			validator = deps.validator,
 		})
 		local second = Factory.create(Content.createInput(101, 1), {
 			rng = deps.rng,
+			criticalRngSeed = 9001,
 			deck = deps.deck,
 			validator = deps.validator,
 		})

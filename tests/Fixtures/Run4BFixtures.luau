@@ -20,51 +20,45 @@ end
 local Classes = {
 	Verdant = {
 		maxHealth = 100,
-		attack = 20,
-		defense = 20,
+		health = 43,
 		speed = 20,
 		skill = 3,
-		resolve = 3,
+		morale = 3,
 	},
 	Tide = {
 		maxHealth = 100,
-		attack = 20,
-		defense = 20,
+		health = 39,
 		speed = 15,
 		skill = 4,
-		resolve = 4,
+		morale = 4,
 	},
 	Feral = {
 		maxHealth = 100,
-		attack = 20,
-		defense = 20,
+		health = 31,
 		speed = 30,
 		skill = 2,
-		resolve = 2,
+		morale = 2,
 	},
 	Gale = {
 		maxHealth = 100,
-		attack = 20,
-		defense = 20,
+		health = 27,
 		speed = 25,
 		skill = 5,
-		resolve = 5,
+		morale = 5,
 	},
 	Shade = {
 		maxHealth = 100,
-		attack = 20,
-		defense = 20,
+		health = 29,
 		speed = 18,
 		skill = 6,
-		resolve = 6,
+		morale = 6,
 	},
 	Stone = {
 		maxHealth = 100,
-		attack = 20,
-		defense = 20,
+		health = 52,
 		speed = 10,
 		skill = 1,
-		resolve = 1,
+		morale = 1,
 	},
 }
 
@@ -97,11 +91,11 @@ local CardDefinitions = {
 	Poison = definition("card.run4b.shade.poison", "Shade", "ENEMY", {
 		{ kind = "STATUS", statusId = "POISON", magnitude = 5, duration = 2 },
 	}),
-	AttackUp = definition("card.run4b.feral.attack-up", "Feral", "SELF", {
-		{ kind = "STATUS", statusId = "ATTACK_UP", magnitude = 10, duration = 2 },
+	DamageUp = definition("card.run4b.feral.damage-up", "Feral", "SELF", {
+		{ kind = "STATUS", statusId = "DAMAGE_UP", magnitude = 10, duration = 2 },
 	}),
-	AttackDown = definition("card.run4b.shade.attack-down", "Shade", "ENEMY", {
-		{ kind = "STATUS", statusId = "ATTACK_DOWN", magnitude = 10, duration = 2 },
+	DamageDown = definition("card.run4b.shade.damage-down", "Shade", "ENEMY", {
+		{ kind = "STATUS", statusId = "DAMAGE_DOWN", magnitude = 10, duration = 2 },
 	}),
 	SpeedUp = definition("card.run4b.gale.speed-up", "Gale", "SELF", {
 		{ kind = "STATUS", statusId = "SPEED_UP", magnitude = 25, duration = 2 },
@@ -155,6 +149,8 @@ local function createState(options)
 	options = options or {}
 	local rng = DeterministicRng.new(options.rngSeed or 4242)
 	assert(rng.ok, "Fixture RNG seed must be valid")
+	local criticalRng = DeterministicRng.new(options.criticalRngSeed or 9001)
+	assert(criticalRng.ok, "Fixture critical RNG seed must be valid")
 
 	local teamSpecs = options.teams
 		or {
@@ -173,14 +169,15 @@ local function createState(options)
 		}
 
 	local state = {
-		schemaVersion = 2,
+		schemaVersion = 3,
 		id = options.battleId or "battle.run4b.fixture",
 		rngSeed = options.rngSeed or 4242,
 		rng = rng.value,
+		criticalRng = criticalRng.value,
 		stateVersion = 1,
 		eventVersion = 0,
 		lastResolvedRound = 0,
-		phase = options.phase or "COMMITTED",
+		phase = options.phase or "RESOLVING",
 		roundNumber = options.roundNumber or 1,
 		teams = {},
 		combatants = {},
@@ -230,6 +227,7 @@ local function createState(options)
 			drawPileCardInstanceIds = teamSpec.drawPileCardInstanceIds or {},
 			handCardInstanceIds = teamSpec.handCardInstanceIds or {},
 			discardCardInstanceIds = teamSpec.discardCardInstanceIds or {},
+			removedCardInstanceIds = {},
 			queuedCards = {},
 			planVersion = 0,
 			committed = options.committed ~= false,
@@ -285,7 +283,7 @@ local function commit(state)
 	for _, teamState in state.teamRoundStates do
 		teamState.committed = true
 	end
-	state.phase = "COMMITTED"
+	state.phase = "RESOLVING"
 	return state
 end
 

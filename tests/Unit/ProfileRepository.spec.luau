@@ -136,6 +136,12 @@ return function(Harness)
 		for _, instance in record.profile.ownedCritters do
 			local definition = Fixtures.Catalog.getById(instance.definitionId)
 			instance.schemaVersion = 1
+			instance.baseStats = {
+				maxHealth = 100,
+				attack = 20,
+				defense = 20,
+				speed = definition.baseStats.speed,
+			}
 			instance.appearanceGenome = {
 				schemaVersion = 1,
 				speciesId = `starter.{string.lower(definition.class)}`,
@@ -151,9 +157,43 @@ return function(Harness)
 		store.set("player:506", record)
 		local migrated = Fixtures.newRepository(store, "migration-target").load(506)
 		Harness.expect(migrated.ok)
-		Harness.equal(migrated.value.profile.schemaVersion, 7)
+		Harness.equal(migrated.value.profile.schemaVersion, 8)
 		Harness.equal(migrated.value.profile.inventory.schemaVersion, 2)
 		Harness.equal(migrated.value.profile.contracts.schemaVersion, 2)
 		Harness.deepEqual(ids(migrated.value.profile), originalIds)
 	end)
+
+	Harness.test(
+		"v7 Critter stats migrate to class Health without reinterpreting maxHealth",
+		function()
+			local store = Fixtures.MockDataStore.new()
+			local sourceRepository = Fixtures.newRepository(store, "stats-source")
+			local loaded = sourceRepository.load(507)
+			Harness.expect(loaded.ok)
+			Harness.expect(sourceRepository.release(loaded.value).ok)
+
+			local record = store.get("player:507")
+			record.profile.schemaVersion = 7
+			for _, instance in record.profile.ownedCritters do
+				instance.schemaVersion = 2
+				instance.baseStats = {
+					maxHealth = 999,
+					attack = 77,
+					defense = 66,
+					speed = 55,
+				}
+			end
+			store.set("player:507", record)
+
+			local migrated = Fixtures.newRepository(store, "stats-target").load(507)
+			Harness.expect(migrated.ok)
+			Harness.equal(migrated.value.profile.schemaVersion, 8)
+			for _, instance in migrated.value.profile.ownedCritters do
+				local definition = Fixtures.Catalog.getById(instance.definitionId)
+				Harness.equal(instance.schemaVersion, 3)
+				Harness.deepEqual(instance.baseStats, definition.baseStats)
+				Harness.expect(instance.baseStats.maxHealth == nil)
+			end
+		end
+	)
 end

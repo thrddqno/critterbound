@@ -18,6 +18,30 @@ return function(Harness)
 		return env
 	end
 
+	local function controlledVictoryInputFactory(firstBuffedGeneration: number)
+		local content = Run5Fixtures.dependencies().content
+		return {
+			createInput = function(userId: number, generation: number)
+				local input = content.createInput(userId, generation)
+				if generation >= firstBuffedGeneration then
+					for _, team in input.teams do
+						if team.id == "team.player" then
+							for _, critter in team.critterInstances do
+								critter.baseStats = {
+									health = 500,
+									speed = 100,
+									skill = 100,
+									morale = 100,
+								}
+							end
+						end
+					end
+				end
+				return input
+			end,
+		}
+	end
+
 	local function ownedCount(env, userId: number): number
 		return ContractFixtures.count(env.read(userId).ownedCritters)
 	end
@@ -131,15 +155,7 @@ return function(Harness)
 			if not queued[cardId] then
 				local payload, definition = legalPayload(snapshot, cardId)
 				if payload ~= nil and definition.energyCost <= roundState.energy then
-					local damage = false
-					for _, effect in definition.effects or {} do
-						if effect.kind == "DAMAGE" or effect.statusId == "POISON" then
-							damage = true
-						end
-					end
-					if damage then
-						return payload, definition
-					end
+					return payload, definition
 				end
 			end
 		end
@@ -361,14 +377,16 @@ return function(Harness)
 
 	Harness.test("real Training Grounds victory completes a contract", function()
 		local env = setup(704)
-		local battleService = env.createBattleService()
+		local battleService = env.createBattleService(nil, {
+			inputFactory = controlledVictoryInputFactory(1),
+		})
 		local accepted = ContractFixtures.accept(env, 704)
 		Harness.expect(accepted.ok)
 		env.advance(5)
 		local started = battleService.startBattle(704)
 		Harness.expect(started.ok)
 		local snapshot = playVictory(battleService, 704, started.value.snapshot)
-		Harness.equal(snapshot.battleState.phase, "COMPLETED")
+		Harness.equal(snapshot.battleState.phase, "FINISHED")
 		local contract = env.read(704).contracts.instancesById[accepted.value.contract.id]
 		Harness.equal(contract.status, "COMPLETED")
 		Harness.equal(contract.progress.current, 1)
@@ -378,7 +396,9 @@ return function(Harness)
 
 	Harness.test("a real Training Grounds loss does not complete a contract", function()
 		local env = setup(705)
-		local battleService = env.createBattleService()
+		local battleService = env.createBattleService(nil, {
+			inputFactory = controlledVictoryInputFactory(2),
+		})
 		local accepted = ContractFixtures.accept(env, 705)
 		Harness.expect(accepted.ok)
 		env.advance(5)
@@ -679,7 +699,9 @@ return function(Harness)
 			commandId = "accept.pending",
 		}, service)
 		Harness.expect(accepted.ok)
-		local battleService = env.createBattleService(service)
+		local battleService = env.createBattleService(service, {
+			inputFactory = controlledVictoryInputFactory(1),
+		})
 		env.advance(5)
 		local started = battleService.startBattle(713)
 		Harness.expect(started.ok)

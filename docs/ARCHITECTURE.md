@@ -150,18 +150,32 @@ COMMITTED -> RESOLVING -> ROUND_END -> COMPLETED
 Intermediate phases exist only inside the call. Duplicate resolution is rejected by the
 `COMMITTED` phase check and the `lastResolvedRound` guard.
 
+Shield preparation is an internal stage at the beginning of `resolveRound`, not a network command or
+new battle phase. Resolution clones committed state, indexes snapshotted queues, validates shield card
+ownership and current targets, then applies shields in team/source/queue/effect/target order. Only
+after every eligible shield emits `SHIELD_PREPARED` does resolution calculate and emit initiative.
+Ordinary card execution skips shield effects, preventing mixed cards from applying them twice while
+retaining the existing one-commit, one-consumption lifecycle.
+
 ## Determinism
 
-Battle state records a seed and `PARK_MILLER_V1` stream state. Random operations use this explicit,
-versioned stream rather than `math.random`. Initiative ordering contains no randomness: effective
-Speed descending, current HP ascending, Skill descending, Resolve descending, then combatant
-identifier. Resolution creates one initiative snapshot after commitment; in-progress Speed changes do
-not reorder that snapshot.
+Battle state records separate versioned `PARK_MILLER_V1` stream states for deck operations and
+critical hits. Deck shuffles consume only `rng`; eligible direct-damage hits consume only
+`criticalRng`. Production critical seeds derive from server-only GUID material and are never accepted
+from clients. `BattleProjector` explicitly omits both RNG states and all future rolls. Initiative
+ordering contains no randomness: effective Speed descending, current HP ascending, Skill descending,
+Morale descending, then combatant identifier. Resolution creates one initiative snapshot after
+commitment; in-progress Speed changes do not reorder that snapshot.
+
+Preparation ordering contains no Speed or RNG input. Shield-only rounds advance neither deck nor
+critical RNG. Existing phase and resolved-round guards prevent preparation from being reapplied to an
+already-resolved state.
 
 Combatant and team traversal always use explicit sort keys: team index, battlefield slot, then
 identifier. Event IDs derive only from battle ID and a monotonic sequence. No wall clock, table hash
-order, or uncontrolled RNG call enters the event stream. Identical state, plans, definitions, and RNG
-state therefore produce identical state and events.
+order, or uncontrolled RNG call enters the event stream. Identical state, plans, definitions, deck
+RNG state, and critical RNG state therefore produce identical state and events. Actual critical
+outcomes are recorded in `DAMAGE_APPLIED`; client commands carrying critical outcomes are rejected.
 
 Inheritance uses the same explicit RNG contract. Thirty-six child positions consume a fair parent
 draw plus a `75/20/5` allele draw each. Disabled mutation therefore consumes exactly 72 draws. No
