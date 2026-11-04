@@ -31,6 +31,9 @@ child allele positions consumes one fair parent draw and one parent-allele draw.
 `1..75 = D`, `76..95 = R1`, and `96..100 = R2`, totaling 72 RNG draws when mutation is disabled.
 Compatibility repair replaces only unresolved dominant alleles and preserves recessive carriers.
 Mutation is off by default; enabled mutation uses bounded sorted candidate lists and no retry loops.
+G4 implements that future stage as pure server module `Server/Genetics/MutationEngine` with disabled
+`MUTATION_POLICY_V1`. Only the 22 active-locus `R1`/`R2` positions are eligible; dominant genes and the
+reserved `traits` locus remain unchanged. G4 does not wire mutation into production breeding.
 
 Run 7A adds no breeding transaction, egg, trading, client-selected genes, final art, or combat effect.
 

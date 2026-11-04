@@ -1,6 +1,7 @@
 # Critterbound Genetics v1.0 Architecture
 
-Status: G2 D/R1/R2 inheritance foundation. `CLASSIC_INHERITANCE_V1` is implemented but not enabled in the production breeding lifecycle.
+Status: G4 D/R1/R2 mutation foundation. `CLASSIC_INHERITANCE_V1` and
+`MUTATION_POLICY_V1` are implemented but not enabled in the production breeding lifecycle.
 
 This document supersedes the earlier paired-allele proposal. Critterbound keeps its existing schema-2 gene triplets and does not migrate saved Critters or eggs to another inheritance representation.
 
@@ -159,7 +160,7 @@ Statistical tests use fixed seeds and explicit tolerances wide enough to avoid f
 - Traces are diagnostic values; G2 does not add them to persistent profiles.
 - No client-controlled payload can author or repair genes.
 
-## 9. Decisions remaining before G3 or live enablement
+## 9. G2 decisions retained through G4
 
 1. Confirm or replace the Critterbound R1/R2 compatibility policy if authoritative historical Axie behavior is obtained. Any change becomes a new policy version.
 2. Decide where explicit `geneContentVersion` and `inheritancePolicy` fields live in future Critter and egg schemas before content version 2.
@@ -169,4 +170,76 @@ Statistical tests use fixed seeds and explicit tolerances wide enough to avoid f
 6. Decide whether legacy fallback-repaired genotypes need audit tooling; G2 does not migrate or rewrite them.
 7. Keep `traits` reserved or define its future non-card semantics. G2 preserves it unchanged.
 
-G3 must not start automatically. Live enablement requires separate approval after profile, egg, hatch, retry/idempotency, and published test-universe validation.
+Live enablement still requires separate approval after profile, egg, hatch, retry/idempotency, and
+published test-universe validation.
+
+## 10. G4 `MUTATION_POLICY_V1`
+
+G4 adds `Server/Genetics/MutationEngine` as a pure post-inheritance stage. It is not called by
+`BreedingService`, `InheritanceEngine`, any remote, or either bootstrap. The intended future pipeline
+is:
+
+```text
+parent genomes
+-> CLASSIC_INHERITANCE_V1
+-> MUTATION_POLICY_V1 (separate server RNG stream)
+-> GenomeValidator
+-> GenotypeExpressor
+```
+
+`MutationPolicy.Default` is server-owned and frozen. It is disabled and carries the proposed test
+probability as the exact fraction `1/10`; this is configuration, not an immutable gameplay rule. A
+caller may provide another validated integer fraction. Live configuration or experimentation can be
+added at a server composition boundary later without adding Roblox services to the engine.
+
+Mutation walks stable registry order: seven appearance loci, then active ability loci `mouth`, `horn`,
+`back`, and `tail`; each visits `R1` then `R2`. This gives exactly 22 eligible positions. `D` and the
+entire reserved `traits` triplet are never visited. Each eligible position receives an independent
+bounded integer roll. A successful roll builds the registered same-layer/same-locus candidate list,
+sorts by gene ID, excludes the original ID, and selects through rejection-sampled bounded RNG. It does
+not filter by current offspring class, so valid hidden carriers survive even when they cannot currently
+express. Existing class, species, rig, tags, and curated cross-class metadata remain registry truth.
+
+The engine validates the incoming genotype, clones it, mutates only selected recessives, and validates
+the result. It returns a tagged result and never changes its input. Invalid policy versions, rates, RNG
+state, dependencies, or genotypes fail closed.
+
+For per-position probability `p`:
+
+- expected mutations per conception: `22p`;
+- probability of at least one mutation: `1 - (1 - p)^22`;
+- at the proposed test rate `p = 0.10`: expected count is `2.2`, and probability of at least one is
+  approximately `90.15%`;
+- zero and multiple mutations remain valid outcomes.
+
+Trace length is bounded at 22 entries. Enabled runs record one outcome per eligible position:
+`NO_MUTATION`, `NO_ALTERNATIVE`, or `MUTATED`. Example successful entry:
+
+```luau
+{
+	layer = "APPEARANCE",
+	locus = "eyes",
+	position = "R1",
+	previousGeneId = "gene.appearance.eyes.stone.default",
+	newGeneId = "gene.appearance.eyes.universal.bright",
+	outcome = "MUTATED",
+}
+```
+
+The enclosing trace records policy version, exact probability fraction, eligible and mutated counts,
+overall outcome, RNG algorithm, and draw-count range. Raw RNG state is excluded from the trace. The
+continuation state is returned separately to the authoritative server caller and is not projected to
+clients or persisted in G4.
+
+## 11. Decisions before G5
+
+1. Approve a live mutation rate, rollout strategy, and whether Experience Configs should supply policy
+   values at the server composition boundary.
+2. Define authoritative mutation seed derivation and durable conception reproducibility metadata.
+3. Decide whether compact mutation receipts or trace digests belong in a future egg/profile schema.
+4. Decide how newly registered genes enter versioned mutation pools before gene content version 2.
+5. Complete published test-universe lifecycle, retry, idempotency, and migration rehearsal before any
+   `BreedingService` enablement.
+6. Keep `traits` reserved until its non-card gameplay meaning and mutation behavior are approved.
+
+G5 must not start automatically.
